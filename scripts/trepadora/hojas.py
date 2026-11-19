@@ -14,7 +14,7 @@ Vector = Tuple[float, float, float]
 class ParametrosHojas:
     semilla: int = 1
     # Probabilidad de que salga una hoja en cada punto de rama.
-    densidad: float = 0.75
+    densidad: float = 0.82
     # Largo de una hoja adulta, en unidades de la escena.
     tamano: float = 1.0
     # Variación aleatoria del tamaño (0 = todas iguales).
@@ -37,6 +37,8 @@ class Hoja:
     normal: Vector        # cara de la hoja
     tamano: float
     edad: float           # 0 = recién brotada, 1 = adulta
+    lobulado: float = 1.0  # 1 = hoja de hiedra con lóbulos, 0 = acorazonada
+    tono: float = 0.5      # 0..1, elige el matiz de verde de la hoja
 
 
 def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=None) -> List[Hoja]:
@@ -55,8 +57,18 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         if n < 2:
             continue
         lado = 1.0 if rng.random() < 0.5 else -1.0
+        # Cada rama tiene su vigor: unas dan hojas grandes y tupidas, otras
+        # pequeñas y ralas. Así la masa se agrupa en matas en vez de ser uniforme.
+        vigor = max(0.55, min(1.45, rng.gauss(1.0, 0.22)))
+        escala_gen = (1.12, 1.0, 0.86, 0.76, 0.7)[min(rama.generacion, 4)]
+        colgante = getattr(rama, "colgante", False)
         for k in range(1, n):
-            if rng.random() >= p.densidad:
+            # La madera vieja del tallo principal pierde parte de sus hojas y
+            # deja ver el tronco.
+            densidad = p.densidad * (0.65 + 0.35 * vigor)
+            if rama.generacion == 0 and n - k > 90:
+                densidad *= 0.45
+            if rng.random() >= densidad:
                 continue
             lado = -lado
             punto = rama.puntos[k]
@@ -72,9 +84,11 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
 
             # Las hojas de una punta que sigue creciendo son pequeñas; si la rama
             # ya paró hace tiempo, sus últimas hojas también han madurado.
-            desde_punta = (n - k) + (0 if rama.viva else p.puntas_jovenes * 0.6)
+            desde_punta = (n - k) + (0 if rama.viva else p.puntas_jovenes * 0.3)
             edad = min(1.0, desde_punta / float(max(p.puntas_jovenes, 1)))
-            tamano = p.tamano * (0.3 + 0.7 * edad)
+            tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
+            if colgante:
+                tamano *= 0.85
             tamano *= 1.0 + p.variacion * (rng.random() * 2.0 - 1.0)
 
             # Dirección de la hoja: hacia un costado, un poco hacia delante,
@@ -99,16 +113,24 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             if v.punto(cara, normal_sup) < 0.15:
                 cara = v.unitario(v.tangente(normal_sup, adelante)) or cara
 
-            peciolo = v.suma(v.escala(costado, 0.5), v.escala(normal_sup, 0.7))
-            peciolo = v.escala(v.unitario(peciolo) or costado, tamano * p.peciolo)
+            # El rabillo sale hacia fuera y hacia delante, con largo variable:
+            # así las hojas se escalonan como tejas en vez de en fila.
+            peciolo = v.suma(v.escala(costado, 0.45), v.escala(normal_sup, 0.6))
+            peciolo = v.suma(peciolo, v.escala(t, rng.uniform(-0.1, 0.5)))
+            peciolo = v.suma(peciolo, v.escala(_aleatorio(rng), 0.25))
+            largo = tamano * p.peciolo * rng.uniform(0.45, 1.5)
+            peciolo = v.escala(v.unitario(peciolo) or costado, largo)
             base = v.suma(punto, peciolo)
 
             if superficie is not None:
                 base = _sin_atravesar(superficie, base, adelante, cara, tamano, normal_sup)
                 if base is None:
                     continue
+            # Las hojas de las puntas y de las ramas colgantes son más enteras.
+            lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
-                              tamano=tamano, edad=edad))
+                              tamano=tamano, edad=edad, lobulado=lobulado,
+                              tono=rng.random()))
     return hojas
 
 

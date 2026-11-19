@@ -46,7 +46,7 @@ class Parametros:
     # 0 = ignora la superficie, 1 = la sigue al máximo.
     adherencia: float = 0.8
     gravedad: float = 0.5
-    luz: float = 0.3
+    luz: float = 0.36
     direccion_luz: Tuple[float, float, float] = (0.0, 1.0, 0.0)
     # Cuánto serpentea la rama.
     aleatoriedad: float = 0.45
@@ -60,9 +60,9 @@ class Parametros:
     # Fuerza con la que se aparta de las zonas ocupadas.
     evitar: float = 0.9
     # Si hay más puntos ajenos que esto dentro del radio, la rama deja de crecer.
-    densidad_max: int = 8
+    densidad_max: int = 10
     # Probabilidad por paso de que brote una rama hija.
-    prob_rama: float = 0.07
+    prob_rama: float = 0.09
     # Puntos mínimos entre dos brotes de la misma rama.
     separacion_brotes: int = 6
     generaciones_max: int = 4
@@ -75,6 +75,14 @@ class Parametros:
     # Pasos que una rama secundaria puede ir por el suelo (o una superficie que
     # mira hacia la luz) antes de parar. Evita alfombras de hojas en el suelo.
     pasos_suelo_max: int = 12
+    # Caída de las ramas secundarias pegadas a la pared (cortinas que cuelgan).
+    # None = se calcula a partir de la gravedad (0 con la gravedad por defecto).
+    caida_ramas: Optional[float] = None
+    # Los brotes nacen donde hay hueco: se prueban varios nudos y se elige el
+    # de menos vecinos, y el lado más vacío.
+    buscar_hueco: bool = True
+    # Brotes extra que salen de la base del tallo principal (varios tallos).
+    brotes_basales: int = 3
     # Fuerza con la que una rama que va por el suelo se dirige a la pared más
     # cercana para trepar por ella (0 = no busca paredes).
     buscar_paredes: float = 1.0
@@ -86,10 +94,9 @@ class Parametros:
     # Largo máximo de los tallos colgantes, en puntos.
     largo_colgante: int = 45
     # Tallos que se abren en abanico cuando el tallo principal empieza a
-    # trepar por una pared (contando el principal).
-    abanico: int = 3
-    # Variación del largo de cada rama: 0 = todas iguales, 1 = muy distintas.
-    vigor_variacion: float = 0.5
+    # trepar por una pared (contando el principal; 1 = sin abanico, porque
+    # ``brotes_basales`` ya saca varios tallos de la base).
+    abanico: int = 1
     # Tope de seguridad para no colgar Maya.
     limite_puntos: int = 60000
 
@@ -107,6 +114,10 @@ class Rama:
     viva: bool = True
     pasos_sueltos: int = 0
     pasos_suelo: int = 0
+    # Rama que cae pegada a la pared (cortina), solo con caída > 0.
+    cortina: bool = False
+    # Tallo que nace de la base: puede reptar más por el suelo hasta otro apoyo.
+    basal: bool = False
     deriva: Vector = (0.0, 0.0, 0.0)
     # Pared hacia la que se dirige por el suelo: (pie, normal), o None.
     objetivo: Optional[Tuple[Vector, Vector]] = None
@@ -162,6 +173,13 @@ class Crecimiento:
         self._luz = v.unitario(v.vec(self.p.direccion_luz)) or v.ARRIBA
         self._giro_max = math.radians(self.p.giro_max)
         self._rejilla = _Rejilla(self.p.radio_espacio)
+        g = self.p.gravedad
+        self._caida = (self.p.caida_ramas if self.p.caida_ramas is not None
+                       else max(0.0, g - 0.5) * 1.3)
+        # Con mucha gravedad las ramas aguantan más tiempo colgando en el aire.
+        # Altura (a lo largo de la luz) mínima y máxima a la que ha llegado la planta.
+        self._altura = [None, None]
+        self._sueltos_max = int(self.p.pasos_sueltos_max * (1.0 + 4.0 * max(0.0, g - 0.5)))
 
     # ------------------------------------------------------------------ origen
     def anadir_origen(self, punto, direccion=None) -> Rama:
@@ -241,8 +259,9 @@ class Crecimiento:
         # El tallo principal es más decidido: serpentea menos y busca más la luz.
         principal = rama.generacion == 0
         d = v.escala(rama.direccion, p.inercia)
-        d = v.suma(d, v.escala(rama.deriva, p.aleatoriedad * (0.55 if principal else 1.0)))
-        luz = p.luz * (1.6 if principal else 1.0)
+        nervio = 0.55 if principal else (0.35 if rama.cortina else 1.0)
+        d = v.suma(d, v.escala(rama.deriva, p.aleatoriedad * nervio))
+        luz = p.luz * (1.6 if principal else (0.0 if rama.cortina else 1.0))
 
         subida = None
         if rama.colgante:
@@ -267,6 +286,13 @@ class Crecimiento:
             # La luz solo empuja a lo largo de la superficie: en un muro hace
             # subir; en una superficie horizontal no empuja y la rama se extiende.
             d = v.suma(d, v.escala(v.tangente(self._luz, normal), luz))
+            if rama.cortina:
+                # Las cortinas caen casi rectas por la pared.
+                peso = self._caida * 2.2 * min(1.0, len(rama.puntos) / 6.0)
+                d = v.suma(d, v.escala(v.tangente(v.ABAJO, normal), peso))
+            elif not principal and self._caida > 0.0:
+                peso = self._caida * 0.35 * min(1.0, len(rama.puntos) / 25.0)
+                d = v.suma(d, v.escala(v.tangente(v.ABAJO, normal), peso))
             # Quita parte de la componente que se aleja o se mete en la superficie.
             d = v.resta(d, v.escala(normal, v.punto(d, normal) * p.adherencia))
             # Acerca la punta a la distancia de separación.
@@ -288,7 +314,8 @@ class Crecimiento:
             lejos = v.unitario(v.tangente(v.resta(punta, centro), normal) if pegada
                                else v.resta(punta, centro))
             if lejos is not None:
-                d = v.suma(d, v.escala(lejos, p.evitar))
+                # Las cortinas caen juntas, casi paralelas: se apartan menos.
+                d = v.suma(d, v.escala(lejos, p.evitar * (0.65 if rama.cortina else 1.0)))
 
         d = v.unitario(d) or rama.direccion
         d = v.limitar_giro(rama.direccion, d, self._giro_max, normal)
@@ -345,10 +372,10 @@ class Crecimiento:
                 rama.viva = False
             return
         if (len(rama.puntos) >= rama.longitud_max
-                or rama.pasos_sueltos > p.pasos_sueltos_max
+                or rama.pasos_sueltos > self._sueltos_max
                 or (not principal and rama.pasos_suelo > p.pasos_suelo_max)
                 or (principal and rama.toco_pared and rama.pasos_suelo > 3 * p.pasos_suelo_max)
-                or (len(rama.puntos) > 6 and len(vecinos) > p.densidad_max)):
+                or (len(rama.puntos) > 6 and len(vecinos) > p.densidad_max * (1.3 if rama.cortina else 1))):
             rama.viva = False
 
     def _quiza_brotar(self, rama: Rama, indice: int, nuevas: List[Rama]) -> None:
@@ -356,33 +383,70 @@ class Crecimiento:
         n = len(rama.puntos)
         if rama.colgante or rama.generacion >= p.generaciones_max or n < 4:
             return
-        if self.rng.random() >= p.prob_rama:
+        if rama.cortina and self.rng.random() < 0.8:
             return
-        # Cada rama tiene su vigor: unas llegan lejos y otras se quedan cortas.
-        vigor = 1.0 - p.vigor_variacion * self.rng.random()
-        longitud = int(rama.longitud_max * p.reduccion_por_generacion * vigor)
+        basal = (rama.generacion == 0 and len(rama.brotes) < p.brotes_basales and n < 40)
+        if not basal and self.rng.random() >= p.prob_rama:
+            return
+        if basal and self.rng.random() >= 0.25:
+            return
+        factor = 0.85 if basal else p.reduccion_por_generacion
+        longitud = int(rama.longitud_max * factor * self.rng.uniform(0.6, 1.25))
         if longitud < 4:
             return
-        # La mitad de los brotes salen de nudos recientes y la otra mitad de
-        # cualquier punto, para que la parte vieja (abajo) también se llene.
-        if self.rng.random() < 0.5:
-            i = self.rng.randint(max(1, n - 30), n - 2)
-        else:
-            i = self.rng.randint(1, n - 2)
-        if any(abs(i - b) < p.separacion_brotes for b in rama.brotes):
+        # Candidatos: nudos recientes y nudos de cualquier punto de la rama, para
+        # que la parte vieja (abajo) también se llene.
+        candidatos = []
+        for _ in range(4 if p.buscar_hueco else 1):
+            if basal:
+                i = self.rng.randint(1, n - 2)
+            elif self.rng.random() < 0.5:
+                i = self.rng.randint(max(1, n - 30), n - 2)
+            else:
+                i = self.rng.randint(1, n - 2)
+            if any(abs(i - b) < p.separacion_brotes for b in rama.brotes):
+                continue
+            candidatos.append(i)
+        if not candidatos:
             return
+        radio = p.radio_espacio * 2.5
+        if p.buscar_hueco and len(candidatos) > 1:
+            candidatos.sort(key=lambda i: len(self._rejilla.vecinos(rama.puntos[i], radio, ())))
+        i = candidatos[0]
         rama.brotes.append(i)
         origen = rama.puntos[i]
         normal = rama.normales[i]
         base = v.unitario(v.resta(rama.puntos[i + 1], rama.puntos[i - 1])) or rama.direccion
-        signo = 1.0 if self.rng.random() < 0.5 else -1.0
-        angulo = math.radians(self.rng.uniform(40.0, 85.0)) * signo
-        d = v.unitario(v.tangente(v.rotar(base, normal, angulo), normal))
-        if d is None:
+        angulo = math.radians(self.rng.uniform(30.0 if basal else 40.0, 85.0))
+        opciones = []
+        for signo in (1.0, -1.0):
+            d = v.unitario(v.tangente(v.rotar(base, normal, angulo * signo), normal))
+            if d is None:
+                continue
+            sonda = v.suma(origen, v.escala(d, radio))
+            opciones.append((len(self._rejilla.vecinos(sonda, radio, ())), self.rng.random(), d))
+        if not opciones:
             return
+        if p.buscar_hueco:
+            opciones.sort()
+            d = opciones[0][2]
+        else:
+            d = self.rng.choice(opciones)[2]
+        # Las cortinas brotan sobre todo de lo alto de la planta.
+        cortina = False
+        if self._caida > 0.0 and not basal and not rama.cortina:
+            bajo, alto = self._altura
+            relativa = (v.punto(origen, self._luz) - bajo) / max(alto - bajo, v.EPS)
+            cortina = self.rng.random() < 0.15 + 0.75 * relativa
+        if cortina:
+            longitud = int(longitud * 1.3)
+            abajo = v.unitario(v.tangente(v.ABAJO, normal))
+            if abajo is not None:
+                d = v.unitario(v.suma(d, abajo)) or d
         nuevas.append(Rama(puntos=[origen], normales=[normal], direccion=d,
                            generacion=rama.generacion + 1, longitud_max=longitud,
-                           madre=indice, indice_en_madre=i))
+                           madre=indice, indice_en_madre=i, cortina=cortina,
+                           basal=basal))
 
     def _abrir_abanico(self, rama: Rama, indice: int, pie: Vector, normal: Vector,
                        arriba: Vector) -> None:
@@ -547,6 +611,11 @@ class Crecimiento:
 
     def _registrar(self, punto: Vector, rama: int) -> None:
         self._rejilla.anadir(punto, rama)
+        h = v.punto(punto, self._luz)
+        if self._altura[0] is None or h < self._altura[0]:
+            self._altura[0] = h
+        if self._altura[1] is None or h > self._altura[1]:
+            self._altura[1] = h
         self.total_puntos += 1
 
     def _aleatorio(self) -> Vector:

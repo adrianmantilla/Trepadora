@@ -36,6 +36,9 @@ RUINA = {
         "paso": 2.6, "pasos": 340, "longitud_max": 200, "prob_rama": 0.06,
         "aleatoriedad": 0.75, "cambio_deriva": 0.15, "evitar": 0.5,
         "prob_colgar": 0.5, "largo_colgante": 55,
+        # Menos luz y brotes al azar (no en el hueco más vacío): en un muro
+        # grande, buscar hueco reparte los tallos en franjas verticales.
+        "luz": 0.28, "densidad_max": 8, "buscar_hueco": False,
     },
 }
 

@@ -21,8 +21,9 @@ Vector = Tuple[float, float, float]
 # tienen ancho cero. "hiedra" tiene dos lóbulos laterales y uno central.
 PERFILES_HOJA = {
     "hiedra": [
-        (0.00, 0.00), (0.06, 0.22), (0.16, 0.42), (0.26, 0.50), (0.36, 0.30),
-        (0.46, 0.27), (0.58, 0.30), (0.72, 0.22), (0.86, 0.10), (1.00, 0.00),
+        (0.00, 0.00), (0.04, 0.24), (0.12, 0.44), (0.22, 0.54), (0.30, 0.40),
+        (0.36, 0.24), (0.46, 0.25), (0.56, 0.30), (0.66, 0.24), (0.78, 0.15),
+        (0.90, 0.07), (1.00, 0.00),
     ],
     "corazon": [
         (0.00, 0.00), (0.08, 0.26), (0.22, 0.40), (0.40, 0.42), (0.58, 0.34),
@@ -64,7 +65,7 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = 6,
         if n < 2:
             continue
         base_color = _variar((0.27, 0.19, 0.12), rng, 0.15)
-        joven = (0.36, 0.42, 0.18)
+        joven = (0.33, 0.30, 0.15)
         normal_ref = rama.normales[0]
         anillos = []
         for k in range(n):
@@ -81,7 +82,7 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = 6,
             w = v.cruz(t, u)
             r = radios_rama[k]
             # Las puntas son verdes y la madera, marrón.
-            mezcla = min(1.0, (n - 1 - k) / 25.0)
+            mezcla = min(1.0, (n - 1 - k) / 40.0)
             color = _mezclar(joven, base_color, mezcla)
             if k == n - 1:
                 anillos.append([malla.vertice(puntos[k], color)])
@@ -104,68 +105,116 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = 6,
 
 
 # -------------------------------------------------------------------- hojas
+def _perfil_mezclado(a, b, t):
+    """Perfil intermedio entre dos perfiles (t = 0 -> a, t = 1 -> b)."""
+    def ancho(perfil, y):
+        for (y0, w0), (y1, w1) in zip(perfil, perfil[1:]):
+            if y0 <= y <= y1:
+                k = (y - y0) / (y1 - y0) if y1 > y0 else 0.0
+                return w0 + (w1 - w0) * k
+        return 0.0
+    ys = sorted(set(round(y, 3) for y, _ in a) | set(round(y, 3) for y, _ in b))
+    return [(y, ancho(a, y) * (1.0 - t) + ancho(b, y) * t) for y in ys]
+
+
+# Matices de verde de una hiedra: oscuro, medio, amarillento y azulado.
+_VERDES = [(0.07, 0.20, 0.05), (0.11, 0.28, 0.07), (0.20, 0.31, 0.07), (0.06, 0.22, 0.11)]
+_VERDE_JOVEN = (0.24, 0.40, 0.11)
+
+
+def _verde(tono):
+    tono = max(0.0, min(0.999, tono)) * (len(_VERDES) - 1)
+    i = int(tono)
+    return _mezclar(_VERDES[i], _VERDES[i + 1], tono - i)
+
+
 def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
                 semilla: int = 1, forma: str = "hiedra") -> Malla:
-    """Una lámina por hoja, ligeramente plegada por el nervio y curvada."""
+    """Una lámina por hoja, plegada por el nervio, curvada y un poco asimétrica.
+
+    Cada hoja mezcla el perfil lobulado con el acorazonado según su
+    ``lobulado`` y tiene su propio matiz de verde.
+    """
     rng = random.Random(semilla * 97 + 3)
-    perfil = PERFILES_HOJA.get(forma, PERFIL_HOJA)
+    perfil_base = PERFILES_HOJA.get(forma, PERFIL_HOJA)
+    entero = PERFILES_HOJA["corazon"]
     malla = Malla()
     for hoja in hojas:
         f = hoja.adelante
         z = hoja.normal
         x = v.cruz(f, z)
         s = hoja.tamano
-        # Hojas jóvenes, verde claro; adultas, verde oscuro, con variación.
-        color = _mezclar((0.42, 0.62, 0.16), (0.10, 0.30, 0.07), hoja.edad)
-        color = _variar(color, rng, 0.18)
-        curva = curvatura * (0.6 + 0.8 * rng.random())
+        lobulado = getattr(hoja, "lobulado", 1.0)
+        perfil = perfil_base if forma != "hiedra" else _perfil_mezclado(entero, perfil_base, lobulado)
+        color = _verde(getattr(hoja, "tono", 0.5))
+        color = _mezclar(_VERDE_JOVEN, color, hoja.edad)
+        color = _variar(color, rng, 0.12)
+        curva = curvatura * (0.5 + 1.0 * rng.random())
+        pliegue = plegado * (0.6 + 0.8 * rng.random())
+        asimetria = rng.uniform(-0.1, 0.1)
+        # La punta se tuerce un poco hacia un lado.
+        torsion = rng.uniform(-0.12, 0.12)
 
         def colocar(cx, cy, cz):
+            cx += torsion * cy * cy
             return v.suma(hoja.base, v.suma(v.escala(x, cx * s),
                                             v.suma(v.escala(f, cy * s), v.escala(z, cz * s))))
 
         filas = []
         for y, ancho in perfil:
-            # La punta se curva hacia la pared y los bordes caen respecto al nervio.
             caida = -curva * y * y
             if ancho == 0.0:
                 filas.append([malla.vertice(colocar(0.0, y, caida), color)])
             else:
-                borde = caida - plegado * ancho
-                oscuro = _mezclar(color, (0.0, 0.0, 0.0), 0.12)
-                filas.append([
-                    malla.vertice(colocar(-ancho, y, borde), oscuro),
-                    malla.vertice(colocar(0.0, y, caida), color),
-                    malla.vertice(colocar(ancho, y, borde), oscuro),
-                ])
+                ancho *= 1.0 + rng.uniform(-0.06, 0.06)
+                izq, der = ancho * (1.0 + asimetria), ancho * (1.0 - asimetria)
+                oscuro = _mezclar(color, (0.0, 0.0, 0.0), 0.15)
+                claro = _mezclar(color, (0.55, 0.65, 0.35), 0.18)
+                fila = []
+                # Sección en forma de cuenco suave (no una V): el nervio
+                # central queda arriba y los bordes caen poco a poco.
+                for r in (-1.0, -0.5, 0.0, 0.5, 1.0):
+                    w = izq if r < 0 else der
+                    cx = r * w
+                    cz = caida - pliegue * w * (0.35 * abs(r) + 0.65 * r * r)
+                    c = claro if r == 0.0 else (oscuro if abs(r) == 1.0 else color)
+                    fila.append(malla.vertice(colocar(cx, y, cz), c))
+                filas.append(fila)
         for a, b in zip(filas, filas[1:]):
-            if len(a) == 1 and len(b) == 3:
-                malla.cara(a[0], b[1], b[0])
-                malla.cara(a[0], b[2], b[1])
-            elif len(a) == 3 and len(b) == 3:
-                malla.cara(a[0], a[1], b[1], b[0])
-                malla.cara(a[1], a[2], b[2], b[1])
-            elif len(a) == 3 and len(b) == 1:
-                malla.cara(a[0], a[1], b[0])
-                malla.cara(a[1], a[2], b[0])
+            if len(a) == 1 and len(b) > 1:
+                for j in range(len(b) - 1):
+                    malla.cara(a[0], b[j + 1], b[j])
+            elif len(a) > 1 and len(b) > 1:
+                for j in range(len(a) - 1):
+                    malla.cara(a[j], a[j + 1], b[j + 1], b[j])
+            elif len(a) > 1 and len(b) == 1:
+                for j in range(len(a) - 1):
+                    malla.cara(a[j], a[j + 1], b[0])
     return malla
 
 
-def malla_peciolos(hojas, grosor: float = 0.04) -> Malla:
-    """Rabillos finos que unen cada hoja con su tallo (una tira plana)."""
+def malla_peciolos(hojas, grosor: float = 0.022) -> Malla:
+    """Rabillos finos y algo arqueados que unen cada hoja con su tallo."""
     malla = Malla()
-    color = (0.25, 0.33, 0.12)
     for hoja in hojas:
         eje = v.resta(hoja.base, hoja.tallo)
+        largo = v.largo(eje)
         lado = v.unitario(v.cruz(eje, hoja.normal))
-        if lado is None:
+        if lado is None or largo < v.EPS:
             continue
+        color = _mezclar((0.30, 0.22, 0.12), (0.30, 0.40, 0.13), 1.0 - hoja.edad * 0.6)
         ancho = v.escala(lado, grosor * hoja.tamano)
+        fino = v.escala(ancho, 0.6)
+        # Punto medio levantado: el rabillo forma un arco, no una línea recta.
+        medio = v.suma(v.suma(hoja.tallo, v.escala(eje, 0.5)), v.escala(hoja.normal, largo * 0.18))
         a = malla.vertice(v.resta(hoja.tallo, ancho), color)
         b = malla.vertice(v.suma(hoja.tallo, ancho), color)
-        c = malla.vertice(v.suma(hoja.base, ancho), color)
-        d = malla.vertice(v.resta(hoja.base, ancho), color)
+        c = malla.vertice(v.suma(medio, fino), color)
+        d = malla.vertice(v.resta(medio, fino), color)
+        e = malla.vertice(v.suma(hoja.base, fino), color)
+        g = malla.vertice(v.resta(hoja.base, fino), color)
         malla.cara(a, b, c, d)
+        malla.cara(d, c, e, g)
     return malla
 
 
