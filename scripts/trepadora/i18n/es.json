@@ -1,0 +1,8 @@
+{
+  "falta_malla": "Trepadora: selecciona al menos una malla (y, si quieres, localizadores para marcar los orígenes).",
+  "progreso_titulo": "Trepadora",
+  "progreso_estado": "Creciendo... paso {paso} de {total} (Esc para detener)",
+  "resumen": "Trepadora: {ramas} ramas y {puntos} puntos en {pasos} pasos (semilla {semilla}).",
+  "limite": "Trepadora: se alcanzó el límite de seguridad de {limite} puntos. Baja los pasos o la probabilidad de rama.",
+  "cancelado": "Trepadora: crecimiento detenido. Se conserva lo generado hasta ahora."
+}
