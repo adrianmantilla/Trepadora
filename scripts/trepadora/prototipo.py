@@ -231,5 +231,8 @@ def escena_ruina(semilla=1, **ajustes):
     from . import escenas
 
     for clave, valor in escenas.RUINA["ajustes"].items():
-        ajustes.setdefault(clave, valor)
+        if clave == "hojas":
+            ajustes["hojas"] = dict(valor, **(ajustes.get("hojas") or {}))
+        else:
+            ajustes.setdefault(clave, valor)
     return ejecutar(semilla=semilla, **ajustes)

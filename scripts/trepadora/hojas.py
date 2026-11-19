@@ -62,6 +62,8 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         vigor = max(0.55, min(1.45, rng.gauss(1.0, 0.22)))
         escala_gen = (1.12, 1.0, 0.86, 0.76, 0.7)[min(rama.generacion, 4)]
         colgante = getattr(rama, "colgante", False)
+        # Las ramillas son cortas: sus hojas maduran antes.
+        jovenes = p.puntas_jovenes * (0.35 if getattr(rama, "ramilla", False) else 1.0)
         for k in range(1, n):
             # La madera vieja del tallo principal pierde parte de sus hojas y
             # deja ver el tronco.
@@ -84,8 +86,8 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
 
             # Las hojas de una punta que sigue creciendo son pequeñas; si la rama
             # ya paró hace tiempo, sus últimas hojas también han madurado.
-            desde_punta = (n - k) + (0 if rama.viva else p.puntas_jovenes * 0.3)
-            edad = min(1.0, desde_punta / float(max(p.puntas_jovenes, 1)))
+            desde_punta = (n - k) + (0 if rama.viva else jovenes * 0.3)
+            edad = min(1.0, desde_punta / float(max(jovenes, 1.0)))
             tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
             if colgante:
                 tamano *= 0.85

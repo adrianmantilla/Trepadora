@@ -126,11 +126,22 @@ class PruebasEscena(unittest.TestCase):
         lejos = [q for q in puntos if v.distancia(q, sup.mas_cercano(q)[0]) > c.p.distancia_adherencia]
         self.assertLess(len(lejos) / len(puntos), 0.1)
 
+    def test_ramillas_cortas_que_no_se_ramifican(self):
+        c = escena(semilla=2, ramillas=0.1)
+        ramillas = [r for r in c.ramas if r.ramilla]
+        self.assertGreater(len(ramillas), 10)
+        for r in ramillas:
+            self.assertLessEqual(len(r.puntos), c.p.largo_ramilla)
+            self.assertFalse(r.hijas)
+        # Sin ramillas no sale ninguna.
+        self.assertFalse(any(r.ramilla for r in escena(semilla=2).ramas))
+
 
 def ruina(**cambios):
     ajustes = dict(escenas.RUINA["ajustes"])
     ajustes.update(cambios)
     paso = ajustes.pop("paso")
+    ajustes.pop("hojas", None)
     base = dict(longitud_paso=paso, distancia_adherencia=paso * 3, separacion=paso * 0.05,
                 radio_espacio=paso * 2)
     base.update(ajustes)
@@ -161,14 +172,30 @@ class PruebasRuina(unittest.TestCase):
     def test_cuelgan_tallos_de_los_bordes(self):
         colgantes = [r for r in self.c.ramas if r.colgante]
         self.assertGreater(len(colgantes), 5)
-        # Cuelgan: bajan bastante más de lo que se desplazan de lado.
+        # Cuelgan: todos bajan, y en conjunto bajan bastante más de lo que se
+        # desplazan de lado (los que se arrastran por una pared serpentean).
+        total_caida = total_lado = 0.0
         for r in colgantes:
             if len(r.puntos) < 10:
                 continue
             caida = r.puntos[0][1] - r.puntos[-1][1]
             lado = v.distancia((r.puntos[0][0], 0.0, r.puntos[0][2]),
                                (r.puntos[-1][0], 0.0, r.puntos[-1][2]))
-            self.assertGreater(caida, lado)
+            self.assertGreater(caida, 0.0)
+            total_caida += caida
+            total_lado += lado
+        self.assertGreater(total_caida, 1.5 * total_lado)
+
+    def test_los_colgantes_libres_caen_mas_rectos(self):
+        # Un tallo que cuelga en el aire (en la ventana) cae casi a plomo; uno
+        # que se arrastra por la pared serpentea.
+        libres = [r for r in self.c.ramas if r.colgante and r.roce == 0 and len(r.puntos) >= 10]
+        self.assertTrue(libres)
+        for r in libres:
+            caida = r.puntos[0][1] - r.puntos[-1][1]
+            lado = v.distancia((r.puntos[0][0], 0.0, r.puntos[0][2]),
+                               (r.puntos[-1][0], 0.0, r.puntos[-1][2]))
+            self.assertGreater(caida, 2.0 * lado)
 
     def test_sin_buscar_paredes_reptan_por_el_suelo(self):
         c = ruina(semilla=1, buscar_paredes=0.0, pasos=120)

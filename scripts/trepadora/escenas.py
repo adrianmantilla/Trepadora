@@ -39,6 +39,8 @@ RUINA = {
         # Menos luz y brotes al azar (no en el hueco más vacío): en un muro
         # grande, buscar hueco reparte los tallos en franjas verticales.
         "luz": 0.28, "densidad_max": 8, "buscar_hueco": False,
+        # Hojas algo mayores que las de por defecto (relativas al paso).
+        "hojas": {"tamano": 1.35},
     },
 }
 
