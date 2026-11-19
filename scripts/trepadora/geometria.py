@@ -104,7 +104,7 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = 6,
 
 
 # -------------------------------------------------------------------- hojas
-def malla_hojas(hojas, curvatura: float = 0.18, plegado: float = 0.22,
+def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
                 semilla: int = 1, forma: str = "hiedra") -> Malla:
     """Una lámina por hoja, ligeramente plegada por el nervio y curvada."""
     rng = random.Random(semilla * 97 + 3)

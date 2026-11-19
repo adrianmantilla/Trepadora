@@ -64,6 +64,8 @@ def configurar_visor():
         cmds.setAttr(transform + ".rotate", -50, -35, 0, type="double3")
         forma = cmds.listRelatives(transform, shapes=True)[0]
         cmds.setAttr(forma + ".useDepthMapShadows", 1)
+        cmds.setAttr(forma + ".dmapResolution", 4096)
+        cmds.setAttr(forma + ".dmapFilterSize", 2)
     if not cmds.objExists("captura_relleno"):
         relleno = cmds.ambientLight(name="captura_rellenoShape", intensity=0.35)
         cmds.rename(cmds.listRelatives(relleno, parent=True)[0], "captura_relleno")
@@ -80,7 +82,7 @@ def _panel_con_camara(camara):
     cmds.lookThru(panel, camara)
     cmds.setFocus(panel)
     cmds.modelEditor(panel, edit=True, displayAppearance="smoothShaded", displayLights="all",
-                     shadows=True, grid=False, headsUpDisplay=False, manipulators=False,
+                     shadows=True, twoSidedLighting=True, grid=False, headsUpDisplay=False, manipulators=False,
                      locators=False, lights=False, cameras=False, nurbsCurves=True,
                      selectionHiliteDisplay=False, wireframeOnShaded=False)
     return panel
@@ -142,4 +144,7 @@ def capturar_y_salir():
             traceback.print_exc(file=f)
         raise
     finally:
-        cmds.quit(force=True)
+        # cmds.quit no siempre funciona durante el arranque de Maya: se sale
+        # del proceso directamente (las imágenes y escenas ya están guardadas).
+        sys.stdout.flush()
+        os._exit(0)

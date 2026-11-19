@@ -139,13 +139,26 @@ class PruebasGrosorHojasMallas(unittest.TestCase):
                 self.assertLessEqual(self.radios[i][0], madre + 1e-9)
 
     def test_hojas_mas_pequenas_en_las_puntas(self):
-        hojas = colocar_hojas(self.c, ParametrosHojas(tamano=2.0, variacion=0.0))
+        # Crecimiento cortado a medias: las puntas siguen vivas y sus hojas son jóvenes.
+        c = escena(semilla=2, pasos=80)
+        hojas = colocar_hojas(c, ParametrosHojas(tamano=2.0, variacion=0.0))
         self.assertGreater(len(hojas), 100)
         jovenes = [h.tamano for h in hojas if h.edad < 0.3]
         adultas = [h.tamano for h in hojas if h.edad >= 1.0]
         self.assertLess(sum(jovenes) / len(jovenes), sum(adultas) / len(adultas))
         for h in hojas:
             self.assertAlmostEqual(v.punto(h.adelante, h.normal), 0.0, places=6)
+
+    def test_hojas_no_atraviesan_la_superficie(self):
+        sup = escena_de_prueba()
+        hojas = colocar_hojas(self.c, ParametrosHojas(tamano=4.0))
+        dentro = 0
+        for h in hojas:
+            punta = v.suma(h.base, v.escala(h.adelante, h.tamano))
+            cercano, normal = sup.mas_cercano(punta)
+            if v.punto(v.resta(punta, cercano), normal) < -0.5:
+                dentro += 1
+        self.assertLess(dentro / len(hojas), 0.01)
 
     def test_mallas_validas(self):
         hojas = colocar_hojas(self.c, ParametrosHojas(tamano=2.0))

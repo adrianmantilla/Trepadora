@@ -72,6 +72,9 @@ class Parametros:
     reduccion_por_generacion: float = 0.6
     # Pasos que una rama puede ir en el aire antes de dejar de crecer.
     pasos_sueltos_max: int = 14
+    # Pasos que una rama secundaria puede ir por el suelo (o una superficie que
+    # mira hacia la luz) antes de parar. Evita alfombras de hojas en el suelo.
+    pasos_suelo_max: int = 12
     # Tope de seguridad para no colgar Maya.
     limite_puntos: int = 60000
 
@@ -88,6 +91,7 @@ class Rama:
     indice_en_madre: int = 0
     viva: bool = True
     pasos_sueltos: int = 0
+    pasos_suelo: int = 0
     deriva: Vector = (0.0, 0.0, 0.0)
     brotes: List[int] = field(default_factory=list)
     hijas: List[int] = field(default_factory=list)
@@ -219,6 +223,10 @@ class Crecimiento:
 
         if pegada:
             rama.pasos_sueltos = 0
+            if v.punto(normal, self._luz) > 0.75:
+                rama.pasos_suelo += 1
+            else:
+                rama.pasos_suelo = 0
             # La luz solo empuja a lo largo de la superficie: en un muro hace
             # subir; en una superficie horizontal no empuja y la rama se extiende.
             d = v.suma(d, v.escala(v.tangente(self._luz, normal), luz))
@@ -272,6 +280,7 @@ class Crecimiento:
 
         if (len(rama.puntos) >= rama.longitud_max
                 or rama.pasos_sueltos > p.pasos_sueltos_max
+                or (not principal and rama.pasos_suelo > p.pasos_suelo_max)
                 or (len(rama.puntos) > 6 and len(vecinos) > p.densidad_max)):
             rama.viva = False
 
