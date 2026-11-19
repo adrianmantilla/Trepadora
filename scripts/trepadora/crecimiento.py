@@ -211,14 +211,17 @@ class Crecimiento:
             nueva = v.tangente(nueva, normal)
         rama.deriva = v.unitario(nueva) or v.CERO
 
+        # El tallo principal es más decidido: serpentea menos y busca más la luz.
+        principal = rama.generacion == 0
         d = v.escala(rama.direccion, p.inercia)
-        d = v.suma(d, v.escala(rama.deriva, p.aleatoriedad))
+        d = v.suma(d, v.escala(rama.deriva, p.aleatoriedad * (0.55 if principal else 1.0)))
+        luz = p.luz * (1.6 if principal else 1.0)
 
         if pegada:
             rama.pasos_sueltos = 0
             # La luz solo empuja a lo largo de la superficie: en un muro hace
             # subir; en una superficie horizontal no empuja y la rama se extiende.
-            d = v.suma(d, v.escala(v.tangente(self._luz, normal), p.luz))
+            d = v.suma(d, v.escala(v.tangente(self._luz, normal), luz))
             # Quita parte de la componente que se aleja o se mete en la superficie.
             d = v.resta(d, v.escala(normal, v.punto(d, normal) * p.adherencia))
             # Acerca la punta a la distancia de separación.
@@ -282,8 +285,12 @@ class Crecimiento:
         longitud = int(rama.longitud_max * p.reduccion_por_generacion)
         if longitud < 4:
             return
-        # El brote sale de un nudo reciente de la rama, separado de otros brotes.
-        i = self.rng.randint(max(1, n - 30), n - 2)
+        # La mitad de los brotes salen de nudos recientes y la otra mitad de
+        # cualquier punto, para que la parte vieja (abajo) también se llene.
+        if self.rng.random() < 0.5:
+            i = self.rng.randint(max(1, n - 30), n - 2)
+        else:
+            i = self.rng.randint(1, n - 2)
         if any(abs(i - b) < p.separacion_brotes for b in rama.brotes):
             return
         rama.brotes.append(i)
