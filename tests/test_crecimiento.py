@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from trepadora.crecimiento import Crecimiento, Parametros  # noqa: E402
 from trepadora import vectores as v  # noqa: E402
+from trepadora import geometria  # noqa: E402
+from trepadora.hojas import ParametrosHojas, colocar_hojas  # noqa: E402
 from superficies import Muro, escena_de_prueba  # noqa: E402
 
 
@@ -120,6 +122,39 @@ class PruebasEscena(unittest.TestCase):
         sup = escena_de_prueba()
         lejos = [q for q in todos(c) if v.distancia(q, sup.mas_cercano(q)[0]) > c.p.distancia_adherencia]
         self.assertLess(len(lejos) / c.total_puntos, 0.1)
+
+
+class PruebasGrosorHojasMallas(unittest.TestCase):
+    def setUp(self):
+        self.c = escena(semilla=2)
+        self.radios = self.c.grosores(1.0, 0.1)
+
+    def test_grosor_se_afina_hacia_las_puntas(self):
+        principal = self.radios[0]
+        self.assertAlmostEqual(principal[0], 1.0)
+        self.assertTrue(all(a >= b - 1e-9 for a, b in zip(principal, principal[1:])))
+        for i, rama in enumerate(self.c.ramas):
+            if rama.madre is not None:
+                madre = self.radios[rama.madre][rama.indice_en_madre]
+                self.assertLessEqual(self.radios[i][0], madre + 1e-9)
+
+    def test_hojas_mas_pequenas_en_las_puntas(self):
+        hojas = colocar_hojas(self.c, ParametrosHojas(tamano=2.0, variacion=0.0))
+        self.assertGreater(len(hojas), 100)
+        jovenes = [h.tamano for h in hojas if h.edad < 0.3]
+        adultas = [h.tamano for h in hojas if h.edad >= 1.0]
+        self.assertLess(sum(jovenes) / len(jovenes), sum(adultas) / len(adultas))
+        for h in hojas:
+            self.assertAlmostEqual(v.punto(h.adelante, h.normal), 0.0, places=6)
+
+    def test_mallas_validas(self):
+        hojas = colocar_hojas(self.c, ParametrosHojas(tamano=2.0))
+        for malla in (geometria.malla_tallos(self.c, self.radios), geometria.malla_hojas(hojas),
+                      geometria.malla_peciolos(hojas)):
+            self.assertEqual(sum(malla.conteos), len(malla.indices))
+            self.assertEqual(len(malla.vertices), len(malla.colores))
+            self.assertTrue(all(0 <= i < len(malla.vertices) for i in malla.indices))
+            self.assertTrue(all(n in (3, 4) for n in malla.conteos))
 
 
 if __name__ == "__main__":
