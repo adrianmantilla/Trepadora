@@ -14,7 +14,8 @@ from trepadora.crecimiento import Crecimiento, Parametros  # noqa: E402
 from trepadora import vectores as v  # noqa: E402
 from trepadora import geometria  # noqa: E402
 from trepadora.hojas import ParametrosHojas, colocar_hojas  # noqa: E402
-from superficies import Muro, escena_de_prueba  # noqa: E402
+from superficies import Muro, escena_de_prueba, escena_ruina  # noqa: E402
+from trepadora import escenas  # noqa: E402
 
 
 def crecer(superficie, origen=(0.0, 0.0, 0.5), **ajustes):
@@ -120,8 +121,60 @@ class PruebasEscena(unittest.TestCase):
     def test_pocas_ramas_en_el_aire(self):
         c = escena(semilla=4, gravedad=1.0, prob_rama=0.08)
         sup = escena_de_prueba()
-        lejos = [q for q in todos(c) if v.distancia(q, sup.mas_cercano(q)[0]) > c.p.distancia_adherencia]
-        self.assertLess(len(lejos) / c.total_puntos, 0.1)
+        # Los tallos colgantes están en el aire a propósito: no cuentan.
+        puntos = [q for r in c.ramas if not r.colgante for q in r.puntos]
+        lejos = [q for q in puntos if v.distancia(q, sup.mas_cercano(q)[0]) > c.p.distancia_adherencia]
+        self.assertLess(len(lejos) / len(puntos), 0.1)
+
+
+def ruina(**cambios):
+    ajustes = dict(escenas.RUINA["ajustes"])
+    ajustes.update(cambios)
+    paso = ajustes.pop("paso")
+    base = dict(longitud_paso=paso, distancia_adherencia=paso * 3, separacion=paso * 0.05,
+                radio_espacio=paso * 2)
+    base.update(ajustes)
+    c = Crecimiento(escena_ruina(), Parametros(**base))
+    for o in escenas.RUINA["origenes"]:
+        c.anadir_origen(o)
+    c.crecer()
+    return c
+
+
+class PruebasRuina(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.c = ruina(semilla=1)
+
+    def test_busca_las_paredes_en_vez_de_reptar_por_el_suelo(self):
+        puntos = todos(self.c)
+        en_suelo = [q for q in puntos if q[1] < 3.0]
+        self.assertLess(len(en_suelo) / len(puntos), 0.15)
+        # Cada planta sube por su pared o su columna.
+        for rama in self.c.ramas[:len(escenas.RUINA["origenes"])]:
+            self.assertGreater(max(q[1] for q in rama.puntos), 40.0)
+
+    def test_nada_bajo_el_suelo(self):
+        # El suelo de la escena es una caja fina: ningún paso debe atravesarla.
+        self.assertGreaterEqual(min(q[1] for q in todos(self.c)), -1e-6)
+
+    def test_cuelgan_tallos_de_los_bordes(self):
+        colgantes = [r for r in self.c.ramas if r.colgante]
+        self.assertGreater(len(colgantes), 5)
+        # Cuelgan: bajan bastante más de lo que se desplazan de lado.
+        for r in colgantes:
+            if len(r.puntos) < 10:
+                continue
+            caida = r.puntos[0][1] - r.puntos[-1][1]
+            lado = v.distancia((r.puntos[0][0], 0.0, r.puntos[0][2]),
+                               (r.puntos[-1][0], 0.0, r.puntos[-1][2]))
+            self.assertGreater(caida, lado)
+
+    def test_sin_buscar_paredes_reptan_por_el_suelo(self):
+        c = ruina(semilla=1, buscar_paredes=0.0, pasos=120)
+        puntos = todos(c)
+        en_suelo = [q for q in puntos if q[1] < 3.0]
+        self.assertGreater(len(en_suelo) / len(puntos), 0.3)
 
 
 class PruebasGrosorHojasMallas(unittest.TestCase):

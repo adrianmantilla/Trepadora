@@ -39,11 +39,16 @@ def _es_localizador(nodo):
     return any(cmds.nodeType(f) == "locator" for f in formas)
 
 
-def _parametros_para(mallas, ajustes):
-    """Escala las distancias al tamaño de la escena para que los valores por defecto funcionen."""
+def _parametros_para(mallas, ajustes, paso=None):
+    """Escala las distancias al tamaño de la escena para que los valores por defecto funcionen.
+
+    ``paso`` es la longitud de cada paso de crecimiento; si no se indica, es
+    1/150 de la diagonal de los objetos seleccionados.
+    """
     xmin, ymin, zmin, xmax, ymax, zmax = cmds.exactWorldBoundingBox(mallas)
-    diagonal = math.sqrt((xmax - xmin) ** 2 + (ymax - ymin) ** 2 + (zmax - zmin) ** 2)
-    paso = max(diagonal / 150.0, 1e-3)
+    if paso is None:
+        diagonal = math.sqrt((xmax - xmin) ** 2 + (ymax - ymin) ** 2 + (zmax - zmin) ** 2)
+        paso = max(diagonal / 150.0, 1e-3)
     base = {
         "longitud_paso": paso,
         "distancia_adherencia": paso * 3.0,
@@ -54,13 +59,14 @@ def _parametros_para(mallas, ajustes):
     return Parametros(**base), (xmin, ymin, zmin, xmax, ymax, zmax), paso
 
 
-def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, **ajustes):
+def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, paso=None, **ajustes):
     """Hace crecer la planta sobre la seleccion.
 
     * ``modo="malla"`` crea tallos con grosor y hojas; ``modo="curvas"`` solo lineas.
     * ``hojas``: diccionario con ajustes de ``ParametrosHojas`` (densidad, tamano...).
       El tamano es relativo: 1.0 = tamano por defecto para la escena.
     * ``grosor``: multiplica el grosor de los tallos.
+    * ``paso``: longitud de cada paso en unidades de la escena (por defecto, automática).
     * Cualquier campo de ``Parametros`` se puede pasar por nombre, por ejemplo
       ``ejecutar(semilla=4, gravedad=1.0, prob_rama=0.08)``.
 
@@ -78,7 +84,7 @@ def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, **ajus
     ajustes["semilla"] = semilla
     if pasos is not None:
         ajustes["pasos"] = pasos
-    parametros, caja, paso_escena = _parametros_para(mallas, ajustes)
+    parametros, caja, paso_escena = _parametros_para(mallas, ajustes, paso)
     pasos = parametros.pasos
     superficie = SuperficieMaya(mallas)
     crecimiento = Crecimiento(superficie, parametros)
@@ -189,15 +195,41 @@ def _asignar_material(transform, nombre, color):
     cmds.sets(transform, edit=True, forceElement=grupo)
 
 
+def crear_escena(nombre="sencilla"):
+    """Construye una de las escenas de ``escenas.py`` y devuelve (mallas, localizadores)."""
+    from . import escenas
+
+    datos = escenas.ESCENAS[nombre]
+    centro, tam = datos["suelo"]
+    suelo = cmds.polyPlane(name="prueba_suelo", width=tam[0], height=tam[2],
+                           subdivisionsX=1, subdivisionsY=1)[0]
+    cmds.move(centro[0], centro[1] + tam[1] / 2.0, centro[2], suelo)
+    mallas = [suelo]
+    for nombre_caja, c, t in datos["cajas"]:
+        caja = cmds.polyCube(name="prueba_" + nombre_caja, width=t[0], height=t[1], depth=t[2])[0]
+        cmds.move(c[0], c[1], c[2], caja)
+        mallas.append(caja)
+    localizadores = []
+    for i, o in enumerate(datos["origenes"]):
+        loc = cmds.spaceLocator(name="prueba_origen{}".format(i + 1))[0]
+        cmds.move(o[0], o[1], o[2], loc)
+        localizadores.append(loc)
+    return mallas, localizadores
+
+
 def escena_de_prueba(semilla=1, **ajustes):
     """Crea un suelo, un muro y una caja, y hace crecer una planta desde la base del muro."""
-    suelo = cmds.polyPlane(name="prueba_suelo", width=400, height=400, subdivisionsX=1,
-                           subdivisionsY=1)[0]
-    muro = cmds.polyCube(name="prueba_muro", width=200, height=150, depth=10)[0]
-    cmds.move(0, 75, 0, muro)
-    caja = cmds.polyCube(name="prueba_caja", width=40, height=40, depth=40)[0]
-    cmds.move(60, 20, 30, caja)
-    origen = cmds.spaceLocator(name="prueba_origen")[0]
-    cmds.move(-20, 2, 5.5, origen)
-    cmds.select([suelo, muro, caja, origen], replace=True)
+    mallas, localizadores = crear_escena("sencilla")
+    cmds.select(mallas + localizadores, replace=True)
+    return ejecutar(semilla=semilla, **ajustes)
+
+
+def escena_ruina(semilla=1, **ajustes):
+    """Crea una pequeña ruina (muro con ventana, columna, murete) y la cubre de hiedra."""
+    mallas, localizadores = crear_escena("ruina")
+    cmds.select(mallas + localizadores, replace=True)
+    from . import escenas
+
+    for clave, valor in escenas.RUINA["ajustes"].items():
+        ajustes.setdefault(clave, valor)
     return ejecutar(semilla=semilla, **ajustes)

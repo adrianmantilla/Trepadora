@@ -56,9 +56,19 @@ class Cajas:
         return mejor[1], mejor[2]
 
 
+def _escena(nombre):
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+    from trepadora import escenas
+    return Cajas(escenas.cajas_min_max(escenas.ESCENAS[nombre]))
+
+
 def escena_de_prueba():
     """Igual que prototipo.escena_de_prueba(): suelo, muro y caja."""
-    suelo = ((-200.0, -1.0, -200.0), (200.0, 0.0, 200.0))
-    muro = ((-100.0, 0.0, -5.0), (100.0, 150.0, 5.0))
-    caja = ((40.0, 0.0, 10.0), (80.0, 40.0, 50.0))
-    return Cajas([suelo, muro, caja])
+    return _escena("sencilla")
+
+
+def escena_ruina():
+    """Igual que prototipo.escena_ruina(): muro con ventana, columna y murete."""
+    return _escena("ruina")

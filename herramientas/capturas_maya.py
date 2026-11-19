@@ -33,9 +33,17 @@ VISTAS = {
     "cerca": dict(ojo=(-60, 150, 120), mira=(-30, 110, 0), fov=45),
 }
 
+VISTAS_RUINA = {
+    "general": dict(ojo=(-260, 220, 520), mira=(20, 110, 40), fov=42),
+    "ventana": dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40),
+    "columna": dict(ojo=(330, 180, 330), mira=(190, 150, 60), fov=42),
+}
+
+# Cada variante: (escena, ajustes, vistas). La escena es "sencilla" o "ruina".
 VARIANTES = {
-    "semilla1": dict(semilla=1),
-    "semilla4_colgante": dict(semilla=4, gravedad=1.0, prob_rama=0.08),
+    "semilla1": ("sencilla", dict(semilla=1), VISTAS),
+    "semilla4_colgante": ("sencilla", dict(semilla=4, gravedad=1.0, prob_rama=0.08), VISTAS),
+    "ruina_semilla1": ("ruina", dict(semilla=1), VISTAS_RUINA),
 }
 
 
@@ -113,13 +121,16 @@ def capturar_todo(carpeta, prefijo="maya"):
         os.makedirs(carpeta)
     tp = _recargar()
     informe = []
-    for nombre, ajustes in VARIANTES.items():
+    for nombre, (escena, ajustes, vistas) in VARIANTES.items():
         cmds.file(new=True, force=True)
         inicio = time.time()
-        tp.escena_de_prueba(**ajustes)
+        if escena == "ruina":
+            tp.escena_ruina(**ajustes)
+        else:
+            tp.escena_de_prueba(**ajustes)
         segundos = time.time() - inicio
         configurar_visor()
-        rutas = capturar_vistas(carpeta, "{}_{}".format(prefijo, nombre))
+        rutas = capturar_vistas(carpeta, "{}_{}".format(prefijo, nombre), vistas)
         escena = os.path.join(carpeta, "{}_{}.ma".format(prefijo, nombre))
         cmds.file(rename=escena)
         cmds.file(save=True, type="mayaAscii", force=True)
