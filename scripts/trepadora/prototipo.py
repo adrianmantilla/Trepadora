@@ -44,6 +44,7 @@ def _parametros_para(mallas, ajustes):
         "longitud_paso": paso,
         "distancia_adherencia": paso * 3.0,
         "separacion": paso * 0.05,
+        "radio_espacio": paso * 2.0,
     }
     base.update(ajustes)
     return Parametros(**base), (xmin, ymin, zmin, xmax, ymax, zmax)

@@ -1,6 +1,5 @@
 """Superficie basada en una o varias mallas de Maya (API 2.0)."""
 
-import numpy as np
 import maya.api.OpenMaya as om
 
 
@@ -31,8 +30,5 @@ class SuperficieMaya:
                 mejor_dist = dist
                 mejor = (cercano, normal)
         cercano, normal = mejor
-        n = np.array([normal.x, normal.y, normal.z], dtype=float)
-        largo = np.linalg.norm(n)
-        if largo > 0:
-            n /= largo
-        return np.array([cercano.x, cercano.y, cercano.z], dtype=float), n
+        normal.normalize()
+        return (cercano.x, cercano.y, cercano.z), (normal.x, normal.y, normal.z)
