@@ -18,6 +18,7 @@ No necesita instalar nada: funciona con el Python que trae Maya (no usa NumPy).
 
    import trepadora.prototipo as tp
    tp.escena_de_prueba()        # crea suelo, muro, caja y un localizador, y hace crecer
+   tp.escena_ruina()            # una pequeña ruina: muro con ventana, columna y murete
    ```
 
 3. Para usar tu propia escena: selecciona una o varias mallas y, si quieres, uno o varios
@@ -40,17 +41,28 @@ Se pasan por nombre, por ejemplo `tp.ejecutar(semilla=4, gravedad=1.0, prob_rama
 | `semilla` | 1 | Mismos ajustes y misma semilla dan siempre la misma planta |
 | `pasos` | 260 | Cuánto crece |
 | `adherencia` | 0.8 | Cuánto se pega a la superficie (0 a 1) |
-| `gravedad` | 0.5 | Cuánto cuelga cuando pierde el apoyo |
-| `luz` | 0.3 | Tendencia a subir por las paredes (hacia `direccion_luz`) |
+| `gravedad` | 0.5 | Cuánto cuelga cuando pierde el apoyo; por encima de 0.5 caen cortinas por la pared |
+| `luz` | 0.36 | Tendencia a subir por las paredes (hacia `direccion_luz`) |
 | `aleatoriedad` | 0.45 | Cuánto serpentea |
 | `cambio_deriva` | 0.25 | Bajo = curvas largas y tranquilas; alto = más nervioso |
 | `giro_max` | 16 | Grados que puede girar una rama en cada paso |
 | `evitar` | 0.9 | Cuánto se apartan las ramas de las zonas ya ocupadas |
-| `prob_rama` | 0.07 | Probabilidad por paso de que brote una rama nueva |
+| `densidad_max` | 10 | Una rama deja de crecer si tiene más vecinas que esto |
+| `prob_rama` | 0.09 | Probabilidad por paso de que brote una rama nueva |
 | `generaciones_max` | 4 | Niveles de ramas hijas |
 | `longitud_max` | 220 | Puntos máximos de la rama principal |
+| `brotes_basales` | 3 | Tallos extra que salen de la base |
+| `rumbo` | 0.35 | Cuánto mantienen las ramas hijas la dirección con la que brotan (se abren en diagonal) |
+| `luz_variacion` | 0.35 | Cada rama busca la luz con una fuerza distinta (evita franjas paralelas) |
+| `buscar_hueco` | True | Las ramas nuevas brotan donde hay más hueco |
+| `buscar_paredes` | 1.0 | Si la planta nace en el suelo, va hacia la pared más cercana y trepa |
+| `prob_colgar` | 0.35 | Probabilidad de que caiga un tallo colgante desde un borde o un saliente |
+| `largo_colgante` | 45 | Largo máximo de los tallos colgantes, en pasos |
+| `ramillas` | 0 | Probabilidad por paso de una ramilla corta que rellena huecos (prueba 0.08) |
+| `largo_ramilla` | 12 | Largo máximo de cada ramilla, en pasos |
 | `limite_puntos` | 60000 | Tope de seguridad para no colgar Maya |
 | `grosor` | 1.0 | Multiplica el grosor de los tallos |
+| `paso` | automático | Largo de cada paso, en unidades de la escena |
 
 ### Ajustes de las hojas
 
@@ -58,10 +70,11 @@ Se pasan como diccionario: `tp.ejecutar(semilla=2, hojas={"densidad": 0.6, "tama
 
 | Ajuste | Por defecto | Qué hace |
 | --- | --- | --- |
-| `densidad` | 0.85 | Probabilidad de hoja en cada punto de rama |
+| `densidad` | 0.82 | Probabilidad de hoja en cada punto de rama |
 | `tamano` | 1.0 | Tamaño relativo de las hojas |
-| `variacion` | 0.35 | Diferencia de tamaño entre hojas |
+| `variacion` | 0.4 | Diferencia de tamaño entre hojas |
 | `puntas_jovenes` | 14 | Puntos desde la punta en los que las hojas son pequeñas |
+| `peciolo` | 0.28 | Largo del rabillo, relativo al tamaño de la hoja |
 | `despegue` | 0.35 | Cuánto se separan de la pared |
 | `caida` | 0.45 | Cuánto cuelga la punta de la hoja |
 
@@ -77,6 +90,7 @@ scripts/trepadora/
   geometria.py        mallas de tallos, hojas y rabillos en Python puro
   vectores.py         operaciones con vectores
   superficie_maya.py  consultas de punto más cercano sobre mallas de Maya
+  escenas.py          escenas de prueba (sencilla y ruina) y sus ajustes
   prototipo.py        prueba de la fase 0 en Maya
   i18n/               textos por idioma (es.json); la interfaz se puede traducir
 herramientas/
