@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from trepadora.crecimiento import Crecimiento, Parametros  # noqa: E402
+from trepadora.crecimiento import Crecimiento, Parametros, consultar  # noqa: E402
 from trepadora import vectores as v  # noqa: E402
 from trepadora import geometria  # noqa: E402
 from trepadora.hojas import ParametrosHojas, colocar_hojas, _recorrido  # noqa: E402
@@ -42,6 +42,32 @@ class PruebasVectores(unittest.TestCase):
     def test_limitar_giro(self):
         d = v.limitar_giro((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.5, (0.0, 0.0, 1.0))
         self.assertAlmostEqual(v.angulo_entre((1.0, 0.0, 0.0), d), 0.5, places=6)
+
+
+class PruebasSuperficie(unittest.TestCase):
+    class _Fija:
+        """Devuelve siempre el mismo punto y la normal indicada."""
+
+        def __init__(self, cercano, normal):
+            self.r = (cercano, normal)
+
+        def mas_cercano(self, punto):
+            return self.r
+
+    def test_en_una_arista_la_normal_no_depende_de_la_cara(self):
+        # Punto por delante y por encima de la arista superior de un muro: el
+        # más cercano es la arista, y una superficie puede dar la normal del
+        # frente y otra la de arriba (Maya da la de la primera cara que mira).
+        punto, arista = (0.0, 101.0, 11.0), (0.0, 100.0, 10.0)
+        frente = consultar(self._Fija(arista, (0.0, 0.0, 1.0)), punto)[1]
+        arriba = consultar(self._Fija(arista, (0.0, 1.0, 0.0)), punto)[1]
+        for a, b in zip(frente, arriba):
+            self.assertAlmostEqual(a, b, places=9)
+        self.assertAlmostEqual(frente[1], frente[2], places=9)
+
+    def test_delante_de_una_cara_se_queda_su_normal(self):
+        n = consultar(self._Fija((3.0, 50.0, 10.0), (0.0, 0.0, 1.0)), (3.0, 50.0, 10.2))[1]
+        self.assertEqual(n, (0.0, 0.0, 1.0))
 
 
 class PruebasCrecimiento(unittest.TestCase):

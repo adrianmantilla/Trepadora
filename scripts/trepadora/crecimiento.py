@@ -150,6 +150,27 @@ class Rama:
     hijas: List[int] = field(default_factory=list)
 
 
+def consultar(superficie, punto: Vector) -> Tuple[Vector, Vector]:
+    """Punto más cercano de la superficie y su normal, igual en Maya y fuera.
+
+    Junto a una arista o una esquina el punto más cercano cae en el borde, que
+    comparten varias caras, y cada superficie devuelve la normal de una
+    cualquiera de ellas (Maya, la primera cara que encuentra). Ahí se usa la
+    dirección desde el borde hasta el punto, que no depende de esa elección y
+    gira con suavidad al rodear la arista.
+    """
+    cercano, normal = superficie.mas_cercano(punto)
+    cercano = v.vec(cercano)
+    n = v.unitario(v.vec(normal)) or v.ARRIBA
+    fuera = v.resta(punto, cercano)
+    d = v.largo(fuera)
+    if d > 1e-6:
+        u = v.escala(fuera, 1.0 / d)
+        if 0.0 < v.punto(u, n) < 0.9999:
+            n = u
+    return cercano, n
+
+
 class _Rejilla:
     """Rejilla espacial para encontrar rápido los puntos cercanos."""
 
@@ -676,9 +697,7 @@ class Crecimiento:
         return q2, v.resta(q2, v.escala(normal, sep)), normal, True
 
     def _consultar(self, punto: Vector) -> Tuple[Vector, Vector]:
-        cercano, normal = self.superficie.mas_cercano(punto)
-        n = v.unitario(v.vec(normal)) or v.ARRIBA
-        return v.vec(cercano), n
+        return consultar(self.superficie, punto)
 
     def _registrar(self, punto: Vector, rama: int) -> None:
         self._rejilla.anadir(punto, rama)

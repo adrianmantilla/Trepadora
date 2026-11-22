@@ -80,9 +80,9 @@ Se pasan como diccionario: `tp.ejecutar(semilla=2, hojas={"densidad": 0.6, "tama
 | `degradado` | 0.7 | Cuánto menguan las hojas lejos de la raíz (0 = todas iguales) |
 | `tronco_visible` | 1.0 | Cuánto se aclaran las hojas sobre los tallos gruesos (0 = nada) |
 | `en_suelo` | 0.4 | Fracción de hojas en los tallos que reptan por el suelo |
-| `manchas` | 0.6 | Cuánto se agrupan las hojas en matas tupidas y oscuras, con zonas más ralas de verde más claro (0 = reparto uniforme) |
-| `escala_manchas` | 7.0 | Tamaño de esas matas, en largos de hoja |
-| `bronce` | 0.04 | Fracción de hojas viejas con tinte bronce, como la hiedra en invierno |
+| `manchas` | 0.6 | Cuánto se agrupan las hojas en matas tupidas, oscuras y abultadas (rabillos largos, hojas a distintas distancias del muro), con zonas más ralas, planas y de verde más claro entre ellas (0 = reparto uniforme) |
+| `escala_manchas` | 13.0 | Tamaño de esas matas, en largos de hoja |
+| `bronce` | 0.015 | Cuántas hojas tiran a bronce, como la hiedra en invierno (con 0.015, alrededor de una de cada cien); salen en rodales de hojas viejas cerca de la raíz |
 
 Las distancias (paso, adherencia, separación) se calculan solas a partir del tamaño de los
 objetos seleccionados.

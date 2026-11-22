@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import List, Tuple
 
 from . import vectores as v
+from .crecimiento import consultar
 
 Vector = Tuple[float, float, float]
 
@@ -35,13 +36,15 @@ class ParametrosHojas:
     tronco_visible: float = 1.0
     # Fracción de hojas que dan los tallos que reptan por el suelo.
     en_suelo: float = 0.4
-    # Cuánto se agrupan las hojas en matas grandes y oscuras con zonas más
-    # ralas y claras entre ellas (0 = reparto uniforme).
+    # Cuánto se agrupan las hojas en matas grandes, oscuras y abultadas, con
+    # zonas más ralas, planas y claras entre ellas (0 = reparto uniforme).
     manchas: float = 0.6
     # Tamaño de esas matas, en largos de hoja.
-    escala_manchas: float = 7.0
-    # Fracción de hojas viejas con tinte bronce, como la hiedra en invierno.
-    bronce: float = 0.04
+    escala_manchas: float = 13.0
+    # Cuántas hojas tiran a bronce, como la hiedra en invierno (con 0.015,
+    # alrededor de una de cada cien). Salen en rodales de hojas viejas, cerca
+    # de la raíz.
+    bronce: float = 0.015
 
 
 @dataclass
@@ -115,7 +118,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # Matas y claros: un ruido suave en el espacio hace que unas zonas
             # estén más tupidas que otras, como en una hiedra de verdad.
             mata = _suave(_ruido(punto, escala_manchas, p.semilla))
-            densidad *= 1.0 - 0.55 * p.manchas * (1.0 - mata)
+            densidad *= 1.0 - 0.85 * p.manchas * (1.0 - mata)
             if piso is not None and normal_sup[1] > 0.8 and punto[1] < piso:
                 densidad *= p.en_suelo
             if rng.random() >= densidad:
@@ -140,7 +143,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             edad = min(1.0, desde_punta / float(max(jovenes, 1.0)))
             tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
             tamano *= 1.0 + p.degradado * (0.45 - lejos)
-            tamano *= 1.0 + 0.35 * p.manchas * (mata - 0.5)
+            tamano *= 1.0 + 0.5 * p.manchas * (mata - 0.5)
             if colgante:
                 tamano *= 0.85
             tamano *= 1.0 + p.variacion * (rng.random() * 2.0 - 1.0)
@@ -148,7 +151,9 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # Dirección de la hoja: hacia un costado, un poco hacia delante,
             # y con la punta cayendo hacia abajo sobre la pared. Algunas hojas
             # se levantan un poco de la pared (nunca hacia dentro).
-            ruido, levanta = _aleatorio(rng), p.despegue * rng.random() * 0.8
+            # En las matas las hojas se levantan más y la masa abulta.
+            abulta = 1.0 + 1.4 * p.manchas * (mata - 0.4)
+            ruido, levanta = _aleatorio(rng), p.despegue * rng.random() * 0.8 * abulta
             adelante = _direccion(costado, t, normal_sup, p.caida, ruido, levanta)
             if (adelante is not None and superficie is not None
                     and _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup)):
@@ -176,11 +181,18 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             peciolo = v.suma(v.escala(costado, 0.45), v.escala(normal_sup, 0.6))
             peciolo = v.suma(peciolo, v.escala(t, rng.uniform(-0.1, 0.5)))
             peciolo = v.suma(peciolo, v.escala(_aleatorio(rng), 0.25))
+            # Rabillos largos en las matas: las hojas se escalonan a distintas
+            # distancias del muro y la masa gana bulto y sombras. En los claros,
+            # cortos, y las hojas quedan planas contra la piedra.
             largo = tamano * p.peciolo * rng.uniform(0.45, 1.5)
+            largo *= max(0.4, 1.0 + 5.0 * p.manchas * (mata - 0.3))
             peciolo = v.escala(v.unitario(peciolo) or costado, largo)
             base = v.suma(punto, peciolo)
 
             if superficie is not None:
+                tumbada = _tumbar_en_remate(superficie, base, adelante, cara, normal_sup, tamano)
+                if tumbada is not None:
+                    base, adelante, cara = tumbada
                 base = _sin_atravesar(superficie, base, adelante, cara, tamano, normal_sup)
                 if base is None:
                     continue
@@ -188,11 +200,13 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
             # Lo nuevo, lejos de la raíz y en los claros, es más claro; las
             # matas viejas, más oscuras. Alguna hoja vieja tira a bronce.
-            claridad = (0.9 * (lejos - 0.4) + 0.8 * p.manchas * (0.5 - mata)
+            claridad = (0.9 * (lejos - 0.4) + 1.3 * p.manchas * (0.5 - mata)
                         + rng.gauss(0.0, 0.18))
             tinte = 0.0
-            if edad > 0.8 and rng.random() < p.bronce:
-                tinte = rng.uniform(0.35, 0.8)
+            if p.bronce > 0.0 and edad > 0.85 and lejos < 0.5:
+                rodal = _ruido(punto, escala_manchas * 0.5, p.semilla + 57)
+                if rng.random() < p.bronce * 100.0 * max(0.0, rodal - 0.62):
+                    tinte = rng.uniform(0.5, 0.85)
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
                               tamano=tamano, edad=edad, lobulado=lobulado,
                               tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.14))),
@@ -219,13 +233,51 @@ def _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup):
     if normal_sup[1] > 0.8 or abs(adelante[1]) <= 0.2:
         return False
     punta = v.suma(punto, v.escala(adelante, tamano * 1.2))
-    cercano, normal = superficie.mas_cercano(punta)
-    n = v.unitario(v.vec(normal))
+    cercano, n = consultar(superficie, punta)
     if n is None or n[1] <= 0.8:
         return False
     if adelante[1] > 0.0:
         return cercano[1] > punto[1] - tamano
     return cercano[1] < punto[1]
+
+
+def _tumbar_en_remate(superficie, base, adelante, cara, normal_sup, tamano):
+    """Tumba sobre un remate la hoja que quedaría de pie encima de él.
+
+    Una hoja de canto (de una pared, del lateral de una ventana) que cae
+    sobre un alféizar, lo alto de un murete o el suelo parecería una aleta
+    clavada en la piedra. Se apoya en él: sale hacia fuera de su pared, en
+    leve pendiente si nace algo más alta, con la cara hacia arriba.
+    Devuelve (base, adelante, cara) o None si no hace falta.
+    """
+    if abs(cara[1]) >= 0.5:
+        return None
+    # Apoyada por la punta (cae sobre el remate) o por la base (nace en el
+    # borde de lo alto de un muro y se alza como una bandera).
+    apoyos = [v.suma(base, v.escala(adelante, tamano * 0.8))]
+    if adelante[1] > 0.2:
+        apoyos.append(base)
+    for q in apoyos:
+        cercano, n = consultar(superficie, q)
+        if n[1] > 0.8 and v.punto(v.resta(q, cercano), n) <= tamano * 0.5:
+            break
+    else:
+        return None
+    plano = v.suma(v.tangente(adelante, n), v.escala(v.tangente(normal_sup, n), 0.6))
+    plano = v.unitario(plano)
+    if plano is None:
+        return None
+    alto = v.punto(v.resta(base, cercano), n)
+    margen = tamano * 0.06
+    if alto < margen:
+        base = v.suma(base, v.escala(n, margen - alto))
+        alto = margen
+    pendiente = min(0.6, (alto - margen) / tamano)
+    nuevo = v.unitario(v.suma(plano, v.escala(n, -pendiente)))
+    nueva_cara = v.unitario(v.tangente(n, nuevo)) if nuevo is not None else None
+    if nuevo is None or nueva_cara is None:
+        return None
+    return base, nuevo, nueva_cara
 
 
 def _recorrido(crecimiento):
@@ -296,8 +348,7 @@ def _sin_atravesar(superficie, base, adelante, cara, tamano, normal_sup):
         falta, salida = 0.0, normal_sup
         for d in desplazamientos:
             q = v.suma(base, d)
-            cercano, normal = superficie.mas_cercano(q)
-            n = v.unitario(v.vec(normal)) or normal_sup
+            cercano, n = consultar(superficie, q)
             hueco = margen - v.punto(v.resta(q, cercano), n)
             if hueco > falta:
                 falta, salida = hueco, n
