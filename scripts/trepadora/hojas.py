@@ -79,6 +79,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
     raices = [r.puntos[0][1] for r in crecimiento.ramas if r.madre is None and r.puntos]
     piso = min(raices) + 2.0 if raices else None
     escala_manchas = max(p.tamano * p.escala_manchas, 1e-6)
+    # Alto de la planta, para saber qué hojas quedan abajo.
+    alturas = [q[1] for r in crecimiento.ramas for q in r.puntos]
+    alto_min = min(alturas) if alturas else 0.0
+    alto_total = max(max(alturas) - alto_min, 1e-6) if alturas else 1.0
     for i_rama, rama in enumerate(crecimiento.ramas):
         n = len(rama.puntos)
         if n < 2:
@@ -114,11 +118,16 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                 # El arranque de cada planta, junto a la raíz, es madera casi
                 # desnuda.
                 densidad *= 1.0 - 0.65 * p.tronco_visible * (1.0 - lejos / 0.06)
-            densidad *= 1.0 - 0.6 * p.degradado * lejos * lejos
+            # Los tallos que cuelgan, aunque sean jóvenes, no se quedan en
+            # hilos desnudos.
+            densidad *= 1.0 - 0.6 * p.degradado * lejos * lejos * (0.4 if colgante else 1.0)
             # Matas y claros: un ruido suave en el espacio hace que unas zonas
-            # estén más tupidas que otras, como en una hiedra de verdad.
+            # estén más tupidas que otras, como en una hiedra de verdad. Lo que
+            # cuelga en el aire va siempre bien vestido.
             mata = _suave(_ruido(punto, escala_manchas, p.semilla))
-            densidad *= 1.0 - 0.85 * p.manchas * (1.0 - mata)
+            if colgante:
+                mata = max(mata, 0.6)
+            densidad *= 1.0 - _K_DENSIDAD * p.manchas * (1.0 - mata)
             if piso is not None and normal_sup[1] > 0.8 and punto[1] < piso:
                 densidad *= p.en_suelo
             if rng.random() >= densidad:
@@ -142,17 +151,17 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             desde_punta = (n - k) + (0 if rama.viva else jovenes * 0.3)
             edad = min(1.0, desde_punta / float(max(jovenes, 1.0)))
             tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
-            tamano *= 1.0 + p.degradado * (0.45 - lejos)
-            tamano *= 1.0 + 0.5 * p.manchas * (mata - 0.5)
-            if colgante:
-                tamano *= 0.85
+            tamano *= 1.0 + p.degradado * (0.45 - lejos) * (0.4 if colgante else 1.0)
+            tamano *= 1.0 + _K_TAMANO * p.manchas * (mata - 0.5)
             tamano *= 1.0 + p.variacion * (rng.random() * 2.0 - 1.0)
 
             # Dirección de la hoja: hacia un costado, un poco hacia delante,
             # y con la punta cayendo hacia abajo sobre la pared. Algunas hojas
             # se levantan un poco de la pared (nunca hacia dentro).
-            # En las matas las hojas se levantan más y la masa abulta.
-            abulta = 1.0 + 1.4 * p.manchas * (mata - 0.4)
+            # En las matas las hojas se levantan más y la masa abulta. Sobre
+            # lo alto de un muro o de un capitel, no: ahí se quedan tumbadas.
+            encima = normal_sup[1] > 0.5
+            abulta = 1.0 if encima else 1.0 + 1.4 * p.manchas * (mata - 0.4)
             ruido, levanta = _aleatorio(rng), p.despegue * rng.random() * 0.8 * abulta
             adelante = _direccion(costado, t, normal_sup, p.caida, ruido, levanta)
             if (adelante is not None and superficie is not None
@@ -178,14 +187,14 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
 
             # El rabillo sale hacia fuera y hacia delante, con largo variable:
             # así las hojas se escalonan como tejas en vez de en fila.
-            peciolo = v.suma(v.escala(costado, 0.45), v.escala(normal_sup, 0.6))
+            peciolo = v.suma(v.escala(costado, 0.45), v.escala(normal_sup, 0.25 if encima else 0.6))
             peciolo = v.suma(peciolo, v.escala(t, rng.uniform(-0.1, 0.5)))
             peciolo = v.suma(peciolo, v.escala(_aleatorio(rng), 0.25))
             # Rabillos largos en las matas: las hojas se escalonan a distintas
             # distancias del muro y la masa gana bulto y sombras. En los claros,
             # cortos, y las hojas quedan planas contra la piedra.
             largo = tamano * p.peciolo * rng.uniform(0.45, 1.5)
-            largo *= max(0.4, 1.0 + 5.0 * p.manchas * (mata - 0.3))
+            largo *= 0.6 if encima else max(0.4, 1.0 + 5.0 * p.manchas * (mata - 0.3))
             peciolo = v.escala(v.unitario(peciolo) or costado, largo)
             base = v.suma(punto, peciolo)
 
@@ -200,12 +209,14 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
             # Lo nuevo, lejos de la raíz y en los claros, es más claro; las
             # matas viejas, más oscuras. Alguna hoja vieja tira a bronce.
-            claridad = (0.9 * (lejos - 0.4) + 1.3 * p.manchas * (0.5 - mata)
-                        + rng.gauss(0.0, 0.18))
+            claridad = (0.9 * (lejos - 0.4) + 1.8 * p.manchas * (0.5 - mata)
+                        + rng.gauss(0.0, 0.25))
             tinte = 0.0
-            if p.bronce > 0.0 and edad > 0.85 and lejos < 0.5:
+            bajo = (punto[1] - alto_min) / alto_total
+            if (p.bronce > 0.0 and edad > 0.85 and bajo < 0.3 and not colgante
+                    and not encima):
                 rodal = _ruido(punto, escala_manchas * 0.5, p.semilla + 57)
-                if rng.random() < p.bronce * 100.0 * max(0.0, rodal - 0.62):
+                if rng.random() < p.bronce * 200.0 * max(0.0, rodal - 0.62):
                     tinte = rng.uniform(0.5, 0.85)
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
                               tamano=tamano, edad=edad, lobulado=lobulado,
@@ -239,6 +250,10 @@ def _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup):
     if adelante[1] > 0.0:
         return cercano[1] > punto[1] - tamano
     return cercano[1] < punto[1]
+
+
+_K_DENSIDAD = 0.95
+_K_TAMANO = 1.0
 
 
 def _tumbar_en_remate(superficie, base, adelante, cara, normal_sup, tamano):

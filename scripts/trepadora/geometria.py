@@ -120,7 +120,7 @@ def _perfil_mezclado(a, b, t):
 # Matices de verde de una hiedra: oscuro, medio, amarillento y azulado.
 _VERDES = [(0.07, 0.20, 0.05), (0.11, 0.28, 0.07), (0.22, 0.33, 0.07), (0.05, 0.21, 0.12)]
 _VERDE_JOVEN = (0.24, 0.40, 0.11)
-_VERDE_CLARO = (0.30, 0.44, 0.12)
+_VERDE_CLARO = (0.35, 0.47, 0.13)
 _VERDE_VIEJO = (0.025, 0.10, 0.045)
 _BRONCE = (0.24, 0.085, 0.07)
 
@@ -153,10 +153,13 @@ def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
         color = _mezclar(_VERDE_JOVEN, color, hoja.edad)
         claridad = getattr(hoja, "claridad", 0.0)
         if claridad > 0.0:
-            color = _mezclar(color, _VERDE_CLARO, 0.7 * claridad)
+            color = _mezclar(color, _VERDE_CLARO, 0.85 * claridad)
         else:
-            color = _mezclar(color, _VERDE_VIEJO, -0.6 * claridad)
+            color = _mezclar(color, _VERDE_VIEJO, -0.7 * claridad)
         color = _mezclar(color, _BRONCE, getattr(hoja, "tinte", 0.0))
+        # La hiedra de verdad es un verde apagado: sin esto, en el espacio
+        # lineal de Maya todas las hojas salen del mismo verde chillón.
+        color = _apagar(color, _APAGADO)
         color = _variar(color, rng, 0.12)
         curva = curvatura * (0.5 + 1.0 * rng.random())
         pliegue = plegado * (0.6 + 0.8 * rng.random())
@@ -230,6 +233,15 @@ def malla_peciolos(hojas, grosor: float = 0.022) -> Malla:
 # --------------------------------------------------------------- utilidades
 def _mezclar(a: Vector, b: Vector, t: float) -> Vector:
     return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
+
+
+_APAGADO = 0.25
+
+
+def _apagar(c: Vector, cantidad: float) -> Vector:
+    """Acerca el color a un gris de su misma luminosidad (le quita saturación)."""
+    gris = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    return _mezclar(c, (gris, gris, gris), cantidad)
 
 
 def _variar(c: Vector, rng, cantidad: float) -> Vector:
