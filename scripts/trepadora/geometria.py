@@ -118,8 +118,11 @@ def _perfil_mezclado(a, b, t):
 
 
 # Matices de verde de una hiedra: oscuro, medio, amarillento y azulado.
-_VERDES = [(0.07, 0.20, 0.05), (0.11, 0.28, 0.07), (0.20, 0.31, 0.07), (0.06, 0.22, 0.11)]
+_VERDES = [(0.07, 0.20, 0.05), (0.11, 0.28, 0.07), (0.22, 0.33, 0.07), (0.05, 0.21, 0.12)]
 _VERDE_JOVEN = (0.24, 0.40, 0.11)
+_VERDE_CLARO = (0.30, 0.44, 0.12)
+_VERDE_VIEJO = (0.03, 0.12, 0.05)
+_BRONCE = (0.30, 0.15, 0.09)
 
 
 def _verde(tono):
@@ -148,6 +151,12 @@ def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
         perfil = perfil_base if forma != "hiedra" else _perfil_mezclado(entero, perfil_base, lobulado)
         color = _verde(getattr(hoja, "tono", 0.5))
         color = _mezclar(_VERDE_JOVEN, color, hoja.edad)
+        claridad = getattr(hoja, "claridad", 0.0)
+        if claridad > 0.0:
+            color = _mezclar(color, _VERDE_CLARO, 0.55 * claridad)
+        else:
+            color = _mezclar(color, _VERDE_VIEJO, -0.45 * claridad)
+        color = _mezclar(color, _BRONCE, getattr(hoja, "tinte", 0.0))
         color = _variar(color, rng, 0.12)
         curva = curvatura * (0.5 + 1.0 * rng.random())
         pliegue = plegado * (0.6 + 0.8 * rng.random())

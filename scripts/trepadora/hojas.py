@@ -35,6 +35,13 @@ class ParametrosHojas:
     tronco_visible: float = 1.0
     # Fracción de hojas que dan los tallos que reptan por el suelo.
     en_suelo: float = 0.4
+    # Cuánto se agrupan las hojas en matas grandes y oscuras con zonas más
+    # ralas y claras entre ellas (0 = reparto uniforme).
+    manchas: float = 0.6
+    # Tamaño de esas matas, en largos de hoja.
+    escala_manchas: float = 7.0
+    # Fracción de hojas viejas con tinte bronce, como la hiedra en invierno.
+    bronce: float = 0.04
 
 
 @dataclass
@@ -47,6 +54,8 @@ class Hoja:
     edad: float           # 0 = recién brotada, 1 = adulta
     lobulado: float = 1.0  # 1 = hoja de hiedra con lóbulos, 0 = acorazonada
     tono: float = 0.5      # 0..1, elige el matiz de verde de la hoja
+    claridad: float = 0.0  # -1 = verde oscuro y viejo, 1 = claro y nuevo
+    tinte: float = 0.0     # 0..1, cuánto tira la hoja a bronce
 
 
 def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=None) -> List[Hoja]:
@@ -66,6 +75,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
     recorrido = _recorrido(crecimiento)
     raices = [r.puntos[0][1] for r in crecimiento.ramas if r.madre is None and r.puntos]
     piso = min(raices) + 2.0 if raices else None
+    escala_manchas = max(p.tamano * p.escala_manchas, 1e-6)
     for i_rama, rama in enumerate(crecimiento.ramas):
         n = len(rama.puntos)
         if n < 2:
@@ -102,6 +112,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                 # desnuda.
                 densidad *= 1.0 - 0.65 * p.tronco_visible * (1.0 - lejos / 0.06)
             densidad *= 1.0 - 0.6 * p.degradado * lejos * lejos
+            # Matas y claros: un ruido suave en el espacio hace que unas zonas
+            # estén más tupidas que otras, como en una hiedra de verdad.
+            mata = _suave(_ruido(punto, escala_manchas, p.semilla))
+            densidad *= 1.0 - 0.55 * p.manchas * (1.0 - mata)
             if piso is not None and normal_sup[1] > 0.8 and punto[1] < piso:
                 densidad *= p.en_suelo
             if rng.random() >= densidad:
@@ -126,6 +140,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             edad = min(1.0, desde_punta / float(max(jovenes, 1.0)))
             tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
             tamano *= 1.0 + p.degradado * (0.45 - lejos)
+            tamano *= 1.0 + 0.35 * p.manchas * (mata - 0.5)
             if colgante:
                 tamano *= 0.85
             tamano *= 1.0 + p.variacion * (rng.random() * 2.0 - 1.0)
@@ -171,9 +186,17 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                     continue
             # Las hojas de las puntas y de las ramas colgantes son más enteras.
             lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
+            # Lo nuevo, lejos de la raíz y en los claros, es más claro; las
+            # matas viejas, más oscuras. Alguna hoja vieja tira a bronce.
+            claridad = (0.9 * (lejos - 0.4) + 0.8 * p.manchas * (0.5 - mata)
+                        + rng.gauss(0.0, 0.18))
+            tinte = 0.0
+            if edad > 0.8 and rng.random() < p.bronce:
+                tinte = rng.uniform(0.35, 0.8)
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
                               tamano=tamano, edad=edad, lobulado=lobulado,
-                              tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.14)))))
+                              tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.14))),
+                              claridad=max(-1.0, min(1.0, claridad)), tinte=tinte))
     return hojas
 
 
@@ -285,6 +308,41 @@ def _sin_atravesar(superficie, base, adelante, cara, tamano, normal_sup):
             return None
         base = v.suma(base, v.escala(salida, falta))
     return base
+
+
+def _hash(i, j, k, semilla):
+    n = (i * 73856093) ^ (j * 19349663) ^ (k * 83492791) ^ (semilla * 2654435761)
+    n = (n ^ (n >> 13)) * 1274126177
+    return ((n ^ (n >> 16)) & 0xFFFFFF) / float(0xFFFFFF)
+
+
+def _ruido(punto, escala, semilla):
+    """Ruido de valor 3D suave, de 0 a 1, con dos octavas."""
+    total, peso, amplitud = 0.0, 0.0, 1.0
+    for octava in range(2):
+        e = escala / (2.0 ** octava)
+        x, y, z = punto[0] / e, punto[1] / e, punto[2] / e
+        i, j, k = math.floor(x), math.floor(y), math.floor(z)
+        fx, fy, fz = x - i, y - j, z - k
+        fx, fy, fz = (f * f * (3.0 - 2.0 * f) for f in (fx, fy, fz))
+        s = semilla + 101 * octava
+        valor = 0.0
+        for di in (0, 1):
+            for dj in (0, 1):
+                for dk in (0, 1):
+                    w = ((fx if di else 1.0 - fx) * (fy if dj else 1.0 - fy)
+                         * (fz if dk else 1.0 - fz))
+                    valor += w * _hash(i + di, j + dj, k + dk, s)
+        total += amplitud * valor
+        peso += amplitud
+        amplitud *= 0.5
+    return total / peso
+
+
+def _suave(n):
+    """Estira el ruido para que haya matas y claros marcados."""
+    t = min(1.0, max(0.0, (n - 0.25) / 0.5))
+    return t * t * (3.0 - 2.0 * t)
 
 
 def _aleatorio(rng) -> Vector:
