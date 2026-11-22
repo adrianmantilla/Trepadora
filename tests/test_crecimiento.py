@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from trepadora.crecimiento import Crecimiento, Parametros  # noqa: E402
 from trepadora import vectores as v  # noqa: E402
 from trepadora import geometria  # noqa: E402
-from trepadora.hojas import ParametrosHojas, colocar_hojas  # noqa: E402
+from trepadora.hojas import ParametrosHojas, colocar_hojas, _recorrido  # noqa: E402
 from superficies import Muro, escena_de_prueba, escena_ruina  # noqa: E402
 from trepadora import escenas  # noqa: E402
 
@@ -222,6 +222,67 @@ class PruebasRuina(unittest.TestCase):
         tumbadas = [h for h in suyas if abs(h.normal[1]) > 0.8]
         self.assertGreater(len(suyas), 100)
         self.assertLess(len(tumbadas), 0.04 * len(suyas))
+
+    def hojas(self, **ajustes):
+        tamano = escenas.RUINA["ajustes"]["paso"] * 2.4 * escenas.RUINA["ajustes"]["hojas"]["tamano"]
+        return colocar_hojas(self.c, ParametrosHojas(semilla=1, tamano=tamano, **ajustes))
+
+    def test_sin_hojas_de_pie_sobre_los_remates(self):
+        # En lo alto de los muros, del murete y del alféizar, las hojas no
+        # asoman de pie como banderas: se tumban sobre el remate o caen por
+        # la pared.
+        sup = escena_ruina()
+        encima = de_pie = 0
+        for h in self.hojas():
+            punta = v.suma(h.base, v.escala(h.adelante, h.tamano * 0.6))
+            cercano, normal = sup.mas_cercano(punta)
+            if (normal[1] > 0.9 and cercano[1] > 5.0
+                    and v.punto(v.resta(punta, cercano), normal) < h.tamano * 1.2):
+                encima += 1
+                de_pie += abs(h.normal[1]) < 0.5
+        self.assertGreater(encima, 200)
+        self.assertLess(de_pie, 0.05 * encima)
+
+    def test_hojas_mayores_cerca_de_la_raiz(self):
+        # La planta no es una alfombra uniforme: las hojas adultas de la parte
+        # vieja, cerca de la raíz, son mayores que las del crecimiento nuevo.
+        recorrido = _recorrido(self.c)
+        donde = {q: recorrido[i][k] for i, r in enumerate(self.c.ramas)
+                 for k, q in enumerate(r.puntos)}
+        cerca, lejos = [], []
+        for h in self.hojas(variacion=0.0):
+            if h.edad >= 1.0:
+                d = donde[h.tallo]
+                if d < 0.3:
+                    cerca.append(h.tamano)
+                elif d > 0.7:
+                    lejos.append(h.tamano)
+        self.assertGreater(len(lejos), 100)
+        self.assertGreater(sum(cerca) / len(cerca), 1.25 * sum(lejos) / len(lejos))
+
+    def test_el_tronco_se_ve_entre_las_hojas(self):
+        # Los tallos gruesos de la base dan menos hojas que las ramas finas.
+        grosor = self.c.grosores(1.0, 0.0)
+        donde = {q: grosor[i][k] for i, r in enumerate(self.c.ramas)
+                 for k, q in enumerate(r.puntos)}
+        puntos = {"grueso": 0, "fino": 0}
+        hojas = {"grueso": 0, "fino": 0}
+        for g in donde.values():
+            if g > 0.6 or g < 0.3:
+                puntos["grueso" if g > 0.6 else "fino"] += 1
+        for h in self.hojas():
+            g = donde[h.tallo]
+            if g > 0.6 or g < 0.3:
+                hojas["grueso" if g > 0.6 else "fino"] += 1
+        self.assertLess(hojas["grueso"] / puntos["grueso"], 0.5 * hojas["fino"] / puntos["fino"])
+
+    def test_pocas_hojas_sueltas_por_el_suelo(self):
+        # Los tallos que reptan por el suelo dan pocas hojas: si no, el pie de
+        # los muros queda rodeado de una falda de hojas sueltas.
+        suelo = {q for r in self.c.ramas for q, n in zip(r.puntos, r.normales)
+                 if n[1] > 0.8 and q[1] < 4.0}
+        hojas = self.hojas()
+        self.assertLess(sum(h.tallo in suelo for h in hojas), 0.03 * len(hojas))
 
     def test_nada_bajo_el_suelo(self):
         # El suelo de la escena es una caja fina: ningún paso debe atravesarla.

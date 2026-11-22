@@ -36,7 +36,9 @@ VISTAS = {
 VISTAS_RUINA = {
     "general": dict(ojo=(-260, 220, 520), mira=(20, 110, 40), fov=42),
     "ventana": dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40),
-    "columna": dict(ojo=(330, 180, 330), mira=(190, 150, 60), fov=42),
+    # Desde abajo y de lado: la columna entera con su capitel, sin que el muro
+    # de detrás ocupe el encuadre.
+    "columna": dict(ojo=(380, 40, 330), mira=(205, 175, 70), fov=60),
 }
 
 # Cada variante: (escena, ajustes, vistas). La escena es "sencilla" o "ruina".

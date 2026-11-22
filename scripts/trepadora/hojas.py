@@ -27,6 +27,14 @@ class ParametrosHojas:
     despegue: float = 0.35
     # Cuánto cuelga la punta de la hoja hacia abajo (0 a 1).
     caida: float = 0.45
+    # Cuánto menguan las hojas hacia las partes más jóvenes de la planta, las
+    # más alejadas de la raíz (0 = todas iguales).
+    degradado: float = 0.4
+    # Cuánto se aclaran las hojas sobre los tallos gruesos para que se vea la
+    # madera (0 = igual de tupidas que en el resto).
+    tronco_visible: float = 1.0
+    # Fracción de hojas que dan los tallos que reptan por el suelo.
+    en_suelo: float = 0.4
 
 
 @dataclass
@@ -52,7 +60,13 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
     superficie = superficie if superficie is not None else getattr(crecimiento, "superficie", None)
     rng = random.Random(p.semilla * 7919 + 17)
     hojas: List[Hoja] = []
-    for rama in crecimiento.ramas:
+    # Lo gruesa que es cada parte de la planta (1 en la base del tronco) y lo
+    # lejos que queda de la raíz (1 en la punta más alejada).
+    grosor = crecimiento.grosores(1.0, 0.0)
+    recorrido = _recorrido(crecimiento)
+    raices = [r.puntos[0][1] for r in crecimiento.ramas if r.madre is None and r.puntos]
+    piso = min(raices) + 2.0 if raices else None
+    for i_rama, rama in enumerate(crecimiento.ramas):
         n = len(rama.puntos)
         if n < 2:
             continue
@@ -71,20 +85,28 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         elif colgante:
             jovenes *= 0.5
         for k in range(1, n):
-            # La madera vieja del tallo principal pierde parte de sus hojas y
-            # deja ver el tronco.
+            punto = rama.puntos[k]
+            normal_sup = rama.normales[k]
+            grueso, lejos = grosor[i_rama][k], recorrido[i_rama][k]
             densidad = p.densidad * (0.65 + 0.35 * vigor)
-            if rama.generacion == 0 and n - k > 90:
-                densidad *= 0.45
+            # La madera vieja y gruesa pierde parte de sus hojas y deja ver el
+            # tronco; las partes más jóvenes, lejos de la raíz, están más ralas.
+            if grueso > 0.3:
+                densidad *= max(0.25, 1.0 - (grueso - 0.3) * 2.0 * p.tronco_visible)
+            if lejos < 0.06:
+                # El arranque de cada planta, junto a la raíz, es madera casi
+                # desnuda.
+                densidad *= 1.0 - 0.65 * p.tronco_visible * (1.0 - lejos / 0.06)
+            densidad *= 1.0 - 0.6 * p.degradado * lejos * lejos
+            if piso is not None and normal_sup[1] > 0.8 and punto[1] < piso:
+                densidad *= p.en_suelo
             if rng.random() >= densidad:
                 continue
             lado = -lado
-            punto = rama.puntos[k]
             anterior = rama.puntos[k - 1]
             t = v.unitario(v.resta(punto, anterior))
             if t is None:
                 continue
-            normal_sup = rama.normales[k]
             if frente is not None and abs(v.punto(normal_sup, v.ARRIBA)) > 0.5:
                 # Cuelga en el aire bajo un saliente: la superficie más cercana
                 # es un techo o un suelo, y las hojas quedarían de canto.
@@ -99,20 +121,25 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             desde_punta = (n - k) + (0 if rama.viva else jovenes * 0.3)
             edad = min(1.0, desde_punta / float(max(jovenes, 1.0)))
             tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
+            tamano *= 1.0 + p.degradado * (0.45 - lejos)
             if colgante:
                 tamano *= 0.85
             tamano *= 1.0 + p.variacion * (rng.random() * 2.0 - 1.0)
 
             # Dirección de la hoja: hacia un costado, un poco hacia delante,
-            # y con la punta cayendo hacia abajo sobre la pared.
-            abajo = v.unitario(v.tangente(v.ABAJO, normal_sup)) or v.CERO
-            adelante = v.suma(v.escala(costado, 1.0), v.escala(t, 0.25))
-            adelante = v.suma(adelante, v.escala(abajo, p.caida * 1.5))
-            adelante = v.suma(adelante, v.escala(_aleatorio(rng), 0.45))
-            adelante = v.tangente(adelante, normal_sup)
-            # Algunas hojas se levantan un poco de la pared (nunca hacia dentro).
-            adelante = v.unitario(v.suma(adelante, v.escala(
-                normal_sup, p.despegue * rng.random() * 0.8)))
+            # y con la punta cayendo hacia abajo sobre la pared. Algunas hojas
+            # se levantan un poco de la pared (nunca hacia dentro).
+            ruido, levanta = _aleatorio(rng), p.despegue * rng.random() * 0.8
+            adelante = _direccion(costado, t, normal_sup, p.caida, ruido, levanta)
+            if (adelante is not None and superficie is not None
+                    and _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup)):
+                # En lo alto de un muro, una hoja que apunta hacia arriba asoma
+                # de pie por encima del borde como una bandera; al pie, una que
+                # apunta hacia abajo acaba arrugada contra el suelo. Sale hacia
+                # el otro lado. Encima quedan las hojas tumbadas de los tallos
+                # que sí pasan al remate.
+                costado = v.escala(costado, -1.0)
+                adelante = _direccion(costado, t, normal_sup, p.caida, ruido, levanta)
             if adelante is None:
                 continue
 
@@ -144,6 +171,54 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                               tamano=tamano, edad=edad, lobulado=lobulado,
                               tono=rng.random()))
     return hojas
+
+
+def _direccion(costado, t, normal_sup, caida, ruido, levanta):
+    abajo = v.unitario(v.tangente(v.ABAJO, normal_sup)) or v.CERO
+    adelante = v.suma(v.escala(costado, 1.0), v.escala(t, 0.25))
+    adelante = v.suma(adelante, v.escala(abajo, caida * 1.5))
+    adelante = v.suma(adelante, v.escala(ruido, 0.45))
+    adelante = v.tangente(adelante, normal_sup)
+    return v.unitario(v.suma(adelante, v.escala(normal_sup, levanta)))
+
+
+def _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup):
+    """True si la hoja de un tallo en una pared acaba sobre una cara horizontal.
+
+    Es decir, si apunta hacia arriba y su punta queda encima de un remate (lo
+    alto de un muro, un alféizar), o apunta hacia abajo y su punta da en el
+    suelo o en un alféizar que hay debajo.
+    """
+    if normal_sup[1] > 0.8 or abs(adelante[1]) <= 0.2:
+        return False
+    punta = v.suma(punto, v.escala(adelante, tamano * 1.2))
+    cercano, normal = superficie.mas_cercano(punta)
+    n = v.unitario(v.vec(normal))
+    if n is None or n[1] <= 0.8:
+        return False
+    if adelante[1] > 0.0:
+        return cercano[1] > punto[1] - tamano
+    return cercano[1] < punto[1]
+
+
+def _recorrido(crecimiento):
+    """Distancia de cada punto a la raíz por el tallo, de 0 a 1."""
+    distancias = []
+    for rama in crecimiento.ramas:
+        if rama.madre is not None and rama.madre < len(distancias) and distancias[rama.madre]:
+            madre = distancias[rama.madre]
+            d = madre[min(rama.indice_en_madre, len(madre) - 1)]
+        else:
+            d = 0.0
+        fila = []
+        anterior = rama.puntos[0] if rama.puntos else None
+        for q in rama.puntos:
+            d += v.largo(v.resta(q, anterior))
+            anterior = q
+            fila.append(d)
+        distancias.append(fila)
+    maximo = max((f[-1] for f in distancias if f), default=0.0) or 1.0
+    return [[d / maximo for d in fila] for fila in distancias]
 
 
 def _frente_colgante(crecimiento, rama):

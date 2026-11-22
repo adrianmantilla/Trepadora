@@ -174,7 +174,8 @@ def _crear_malla(nombre, malla):
     fn = om.MFnMesh()
     puntos = om.MPointArray([om.MPoint(*p) for p in malla.vertices])
     objeto = fn.create(puntos, malla.conteos, malla.indices)
-    colores = om.MColorArray([om.MColor((c[0], c[1], c[2], 1.0)) for c in malla.colores])
+    lineal = _con_gestion_de_color()
+    colores = om.MColorArray([om.MColor(_a_lineal(c, lineal) + (1.0,)) for c in malla.colores])
     fn.setVertexColors(colores, list(range(len(malla.vertices))))
     transform = om.MFnDagNode(objeto).fullPathName()
     transform = cmds.rename(transform, nombre)
@@ -189,10 +190,30 @@ def _asignar_material(transform, nombre, color):
         grupo = cmds.listConnections(material + ".outColor", type="shadingEngine")[0]
     else:
         material = cmds.shadingNode("lambert", asShader=True, name=nombre)
-        cmds.setAttr(material + ".color", *color, type="double3")
+        cmds.setAttr(material + ".color", *_a_lineal(color, _con_gestion_de_color()),
+                     type="double3")
         grupo = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=nombre + "SG")
         cmds.connectAttr(material + ".outColor", grupo + ".surfaceShader", force=True)
     cmds.sets(transform, edit=True, forceElement=grupo)
+
+
+def _con_gestion_de_color():
+    try:
+        return bool(cmds.colorManagementPrefs(query=True, cmEnabled=True))
+    except (RuntimeError, TypeError):
+        return False
+
+
+def _a_lineal(color, lineal=True):
+    """Pasa un color pensado para la pantalla (sRGB) al espacio lineal.
+
+    Con la gestión de color activa, Maya trata los colores de vértice y de
+    material como lineales: sin convertirlos, los verdes salen mucho más
+    claros y chillones de lo previsto.
+    """
+    if not lineal:
+        return tuple(color[:3])
+    return tuple(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in color[:3])
 
 
 def crear_escena(nombre="sencilla"):

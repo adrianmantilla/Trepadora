@@ -77,6 +77,9 @@ Se pasan como diccionario: `tp.ejecutar(semilla=2, hojas={"densidad": 0.6, "tama
 | `peciolo` | 0.28 | Largo del rabillo, relativo al tamaño de la hoja |
 | `despegue` | 0.35 | Cuánto se separan de la pared |
 | `caida` | 0.45 | Cuánto cuelga la punta de la hoja |
+| `degradado` | 0.4 | Cuánto menguan las hojas lejos de la raíz (0 = todas iguales) |
+| `tronco_visible` | 1.0 | Cuánto se aclaran las hojas sobre los tallos gruesos (0 = nada) |
+| `en_suelo` | 0.4 | Fracción de hojas en los tallos que reptan por el suelo |
 
 Las distancias (paso, adherencia, separación) se calculan solas a partir del tamaño de los
 objetos seleccionados.
