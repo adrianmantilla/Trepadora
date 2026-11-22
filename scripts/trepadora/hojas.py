@@ -29,7 +29,7 @@ class ParametrosHojas:
     caida: float = 0.45
     # Cuánto menguan las hojas hacia las partes más jóvenes de la planta, las
     # más alejadas de la raíz (0 = todas iguales).
-    degradado: float = 0.4
+    degradado: float = 0.7
     # Cuánto se aclaran las hojas sobre los tallos gruesos para que se vea la
     # madera (0 = igual de tupidas que en el resto).
     tronco_visible: float = 1.0
@@ -74,6 +74,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         # Cada rama tiene su vigor: unas dan hojas grandes y tupidas, otras
         # pequeñas y ralas. Así la masa se agrupa en matas en vez de ser uniforme.
         vigor = max(0.55, min(1.45, rng.gauss(1.0, 0.22)))
+        # Y su matiz: las hojas de una misma rama se parecen, así el color va
+        # por manchas (más amarillento aquí, más azulado allá) y no a sal y
+        # pimienta.
+        tono_rama = rng.random()
         escala_gen = (1.12, 1.0, 0.86, 0.76, 0.7)[min(rama.generacion, 4)]
         colgante = getattr(rama, "colgante", False)
         frente = _frente_colgante(crecimiento, rama) if colgante else None
@@ -169,7 +173,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
                               tamano=tamano, edad=edad, lobulado=lobulado,
-                              tono=rng.random()))
+                              tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.14)))))
     return hojas
 
 

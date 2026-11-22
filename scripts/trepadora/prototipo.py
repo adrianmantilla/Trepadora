@@ -25,6 +25,9 @@ GRUPO_VISTA_PREVIA = "trepadora_vista_previa_grp"
 GRUPO_PLANTA = "trepadora_planta_grp"
 # Colores de Maya por generacion: verde oscuro, verde, verde claro, amarillo verdoso.
 _COLORES = [7, 23, 14, 26]
+# Aclara los colores de hojas y rabillos una vez pasados a lineal (ver
+# _a_lineal): con la vista ACES de Maya, la hiedra sale casi negra si no.
+_BRILLO_HOJAS = 1.6
 
 
 def _es_malla(nodo):
@@ -161,21 +164,23 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1):
     for nombre, malla, color in piezas:
         if not malla.conteos:
             continue
-        transform = _crear_malla(nombre, malla)
-        _asignar_material(transform, nombre + "_mat", color)
+        brillo = 1.0 if nombre == "trepadora_tallos" else _BRILLO_HOJAS
+        transform = _crear_malla(nombre, malla, brillo)
+        _asignar_material(transform, nombre + "_mat", color, brillo)
         cmds.parent(transform, grupo)
     print("Trepadora: {} hojas.".format(len(hojas)))
     return grupo
 
 
-def _crear_malla(nombre, malla):
+def _crear_malla(nombre, malla, brillo=1.0):
     import maya.api.OpenMaya as om
 
     fn = om.MFnMesh()
     puntos = om.MPointArray([om.MPoint(*p) for p in malla.vertices])
     objeto = fn.create(puntos, malla.conteos, malla.indices)
     lineal = _con_gestion_de_color()
-    colores = om.MColorArray([om.MColor(_a_lineal(c, lineal) + (1.0,)) for c in malla.colores])
+    colores = om.MColorArray([om.MColor(_a_lineal(c, lineal, brillo) + (1.0,))
+                              for c in malla.colores])
     fn.setVertexColors(colores, list(range(len(malla.vertices))))
     transform = om.MFnDagNode(objeto).fullPathName()
     transform = cmds.rename(transform, nombre)
@@ -184,13 +189,13 @@ def _crear_malla(nombre, malla):
     return transform
 
 
-def _asignar_material(transform, nombre, color):
+def _asignar_material(transform, nombre, color, brillo=1.0):
     if cmds.objExists(nombre):
         material = nombre
         grupo = cmds.listConnections(material + ".outColor", type="shadingEngine")[0]
     else:
         material = cmds.shadingNode("lambert", asShader=True, name=nombre)
-        cmds.setAttr(material + ".color", *_a_lineal(color, _con_gestion_de_color()),
+        cmds.setAttr(material + ".color", *_a_lineal(color, _con_gestion_de_color(), brillo),
                      type="double3")
         grupo = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=nombre + "SG")
         cmds.connectAttr(material + ".outColor", grupo + ".surfaceShader", force=True)
@@ -204,16 +209,17 @@ def _con_gestion_de_color():
         return False
 
 
-def _a_lineal(color, lineal=True):
+def _a_lineal(color, lineal=True, brillo=1.0):
     """Pasa un color pensado para la pantalla (sRGB) al espacio lineal.
 
     Con la gestión de color activa, Maya trata los colores de vértice y de
     material como lineales: sin convertirlos, los verdes salen mucho más
-    claros y chillones de lo previsto.
+    claros y chillones de lo previsto. ``brillo`` multiplica el resultado.
     """
     if not lineal:
         return tuple(color[:3])
-    return tuple(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in color[:3])
+    return tuple(min(1.0, brillo * (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4))
+                 for c in color[:3])
 
 
 def crear_escena(nombre="sencilla"):
