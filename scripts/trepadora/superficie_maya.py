@@ -21,14 +21,18 @@ class SuperficieMaya:
 
     def mas_cercano(self, punto):
         consulta = om.MPoint(float(punto[0]), float(punto[1]), float(punto[2]))
-        mejor = None
-        mejor_dist = None
+        candidatos = []
         for malla in self._mallas:
             cercano, normal, _ = malla.getClosestPointAndNormal(consulta, om.MSpace.kWorld)
-            dist = cercano.distanceTo(consulta)
-            if mejor_dist is None or dist < mejor_dist:
-                mejor_dist = dist
-                mejor = (cercano, normal)
-        cercano, normal = mejor
-        normal.normalize()
+            normal.normalize()
+            candidatos.append((cercano.distanceTo(consulta), cercano, normal))
+        mejor_dist = min(c[0] for c in candidatos)
+        # Empates: dos caras a la misma distancia, por ejemplo el suelo y la
+        # base de un muro apoyado en él (caras coplanarias con normales
+        # opuestas). Si el punto queda detrás de alguna, está dentro de un
+        # objeto o bajo el suelo, y esa cara es la que lo debe sacar; si no,
+        # la base del muro lo dejaría "pegado" por debajo del suelo.
+        empatados = [c for c in candidatos if c[0] <= mejor_dist * 1.02 + 1e-4]
+        detras = [c for c in empatados if (consulta - c[1]) * c[2] < 0.0]
+        _, cercano, normal = (detras or empatados)[0]
         return (cercano.x, cercano.y, cercano.z), (normal.x, normal.y, normal.z)

@@ -139,31 +139,42 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
 def _sin_atravesar(superficie, base, adelante, cara, tamano, normal_sup):
     """Separa la hoja de la superficie si alguna parte queda dentro.
 
-    Comprueba la punta y los dos bordes. Devuelve la nueva base, o None si la
-    hoja tendría que separarse demasiado (mejor no ponerla).
+    Comprueba la punta, los dos bordes y el centro contra todas las caras
+    cercanas, no solo la del tallo: al pie de un muro, una hoja que cuelga se
+    mete en el suelo aunque el tallo vaya por el muro. Cada vez la saca en la
+    dirección de la cara que atraviesa más. Devuelve la nueva base, o None si
+    la hoja tendría que separarse demasiado (mejor no ponerla).
     """
     lado = v.cruz(adelante, cara)
     margen = tamano * 0.04
-    # Puntos de la hoja ya curvada y plegada (ver geometria.malla_hojas).
+    # Puntos de la hoja ya curvada y plegada (ver geometria.malla_hojas),
+    # relativos a la base.
     abajo = v.escala(cara, -1.0)
-    muestras = [
-        v.suma(v.suma(base, v.escala(adelante, tamano)), v.escala(abajo, tamano * 0.32)),
-        v.suma(v.suma(v.suma(base, v.escala(adelante, tamano * 0.26)), v.escala(lado, tamano * 0.5)),
+    desplazamientos = [
+        v.suma(v.escala(adelante, tamano), v.escala(abajo, tamano * 0.32)),
+        v.suma(v.suma(v.escala(adelante, tamano * 0.26), v.escala(lado, tamano * 0.5)),
                v.escala(abajo, tamano * 0.22)),
-        v.suma(v.suma(v.suma(base, v.escala(adelante, tamano * 0.26)), v.escala(lado, -tamano * 0.5)),
+        v.suma(v.suma(v.escala(adelante, tamano * 0.26), v.escala(lado, -tamano * 0.5)),
                v.escala(abajo, tamano * 0.22)),
-        v.suma(v.suma(base, v.escala(adelante, tamano * 0.6)), v.escala(abajo, tamano * 0.2)),
+        v.suma(v.escala(adelante, tamano * 0.6), v.escala(abajo, tamano * 0.2)),
     ]
-    falta = 0.0
-    for q in muestras:
-        cercano, normal = superficie.mas_cercano(q)
-        altura = v.punto(v.resta(q, cercano), v.unitario(v.vec(normal)) or normal_sup)
-        falta = max(falta, margen - altura)
-    if falta <= 0.0:
-        return base
-    if falta > tamano * 0.6:
-        return None
-    return v.suma(base, v.escala(normal_sup, falta))
+    movido = 0.0
+    for _ in range(3):
+        falta, salida = 0.0, normal_sup
+        for d in desplazamientos:
+            q = v.suma(base, d)
+            cercano, normal = superficie.mas_cercano(q)
+            n = v.unitario(v.vec(normal)) or normal_sup
+            hueco = margen - v.punto(v.resta(q, cercano), n)
+            if hueco > falta:
+                falta, salida = hueco, n
+        if falta <= 0.0:
+            return base
+        movido += falta
+        if movido > tamano * 0.6:
+            return None
+        base = v.suma(base, v.escala(salida, falta))
+    return base
 
 
 def _aleatorio(rng) -> Vector:

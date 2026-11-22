@@ -238,6 +238,24 @@ class PruebasGrosorHojasMallas(unittest.TestCase):
                 dentro += 1
         self.assertLess(dentro / len(hojas), 0.01)
 
+    def test_hojas_no_se_meten_en_el_suelo_al_pie_del_muro(self):
+        # En Maya el suelo es un plano: todo lo que queda por debajo está
+        # "dentro". Se simula con un suelo muy grueso. Las hojas de los tallos
+        # que suben por el pie del muro no deben hundirse en él.
+        from superficies import Cajas
+        cajas = escenas.cajas_min_max(escenas.SENCILLA)
+        lo, hi = cajas[0]
+        cajas[0] = ((lo[0], -300.0, lo[2]), hi)
+        sup = Cajas(cajas)
+        paso = (400.0 ** 2 + 151.0 ** 2 + 400.0 ** 2) ** 0.5 / 150.0
+        c = crecer(sup, origen=(-20.0, 2.0, 5.5), longitud_paso=paso,
+                   distancia_adherencia=paso * 3, separacion=paso * 0.05,
+                   radio_espacio=paso * 2, semilla=4, gravedad=1.0, prob_rama=0.08)
+        hojas = colocar_hojas(c, ParametrosHojas(semilla=4, tamano=paso * 2.4))
+        malla = geometria.malla_hojas(hojas)
+        hundidos = [p for p in malla.vertices if p[1] < -0.1 * paso]
+        self.assertLess(len(hundidos), 0.001 * len(malla.vertices))
+
     def test_mallas_validas(self):
         hojas = colocar_hojas(self.c, ParametrosHojas(tamano=2.0))
         for malla in (geometria.malla_tallos(self.c, self.radios), geometria.malla_hojas(hojas),
