@@ -62,8 +62,14 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         vigor = max(0.55, min(1.45, rng.gauss(1.0, 0.22)))
         escala_gen = (1.12, 1.0, 0.86, 0.76, 0.7)[min(rama.generacion, 4)]
         colgante = getattr(rama, "colgante", False)
-        # Las ramillas son cortas: sus hojas maduran antes.
-        jovenes = p.puntas_jovenes * (0.35 if getattr(rama, "ramilla", False) else 1.0)
+        frente = _frente_colgante(crecimiento, rama) if colgante else None
+        # Las ramillas son cortas: sus hojas maduran antes. Las de los tallos
+        # que cuelgan también, o el tallo parece un hilo con hojitas.
+        jovenes = p.puntas_jovenes
+        if getattr(rama, "ramilla", False):
+            jovenes *= 0.35
+        elif colgante:
+            jovenes *= 0.5
         for k in range(1, n):
             # La madera vieja del tallo principal pierde parte de sus hojas y
             # deja ver el tronco.
@@ -79,6 +85,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             if t is None:
                 continue
             normal_sup = rama.normales[k]
+            if frente is not None and abs(v.punto(normal_sup, v.ARRIBA)) > 0.5:
+                # Cuelga en el aire bajo un saliente: la superficie más cercana
+                # es un techo o un suelo, y las hojas quedarían de canto.
+                normal_sup = frente
             costado = v.unitario(v.cruz(normal_sup, t))
             if costado is None:
                 continue
@@ -134,6 +144,27 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                               tamano=tamano, edad=edad, lobulado=lobulado,
                               tono=rng.random()))
     return hojas
+
+
+def _frente_colgante(crecimiento, rama):
+    """Hacia dónde miran las hojas de un tallo que cuelga en el aire.
+
+    Hacia fuera de la pared de la que cae: su salida, o la última cara
+    vertical por la que pasó la rama madre antes de soltarlo.
+    """
+    candidatos = [getattr(rama, "salida", None)]
+    madre = getattr(rama, "madre", None)
+    if madre is not None:
+        normales = crecimiento.ramas[madre].normales
+        i = min(rama.indice_en_madre, len(normales) - 1)
+        candidatos += [normales[j] for j in range(i, max(-1, i - 15), -1)]
+    for n in candidatos:
+        if n is None:
+            continue
+        horizontal = v.tangente(n, v.ARRIBA)
+        if v.largo(horizontal) > 0.6:
+            return v.unitario(v.suma(v.unitario(horizontal), v.escala(v.ARRIBA, 0.3)))
+    return None
 
 
 def _sin_atravesar(superficie, base, adelante, cara, tamano, normal_sup):

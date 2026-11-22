@@ -152,6 +152,40 @@ def ruina(**cambios):
     return c
 
 
+def calvas_frente(hojas, celda=10.0):
+    """Calvas del frente del muro de la ruina (z = 10), sin contar la ventana.
+
+    Devuelve la fracción de celdas sin ninguna hoja y el tamaño (en celdas)
+    de la mayor mancha de celdas vacías contiguas.
+    """
+    x0, x1, y0, y1 = -150.0, 150.0, 0.0, 230.0
+    nx, ny = int((x1 - x0) // celda), int((y1 - y0) // celda)
+    llenas = set()
+    for h in hojas:
+        centro = [h.base[i] + h.adelante[i] * h.tamano * 0.5 for i in range(3)]
+        if -1.0 <= centro[2] - 10.0 <= 14.0:
+            llenas.add((int((centro[0] - x0) // celda), int((centro[1] - y0) // celda)))
+    validas = {(i, j) for i in range(nx) for j in range(ny)
+               if not (-40.0 <= x0 + (i + 0.5) * celda <= 40.0
+                       and 80.0 <= y0 + (j + 0.5) * celda <= 180.0)}
+    vacias = validas - llenas
+    mayor, vistas = 0, set()
+    for celda_vacia in vacias:
+        if celda_vacia in vistas:
+            continue
+        pila, n = [celda_vacia], 0
+        vistas.add(celda_vacia)
+        while pila:
+            i, j = pila.pop()
+            n += 1
+            for q in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+                if q in vacias and q not in vistas:
+                    vistas.add(q)
+                    pila.append(q)
+        mayor = max(mayor, n)
+    return len(vacias) / float(len(validas)), mayor
+
+
 class PruebasRuina(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -164,6 +198,30 @@ class PruebasRuina(unittest.TestCase):
         # Cada planta sube por su pared o su columna.
         for rama in self.c.ramas[:len(escenas.RUINA["origenes"])]:
             self.assertGreater(max(q[1] for q in rama.puntos), 40.0)
+
+    def test_el_frente_del_muro_no_tiene_grandes_calvas(self):
+        # Las hojas cubren el frente del muro sin dejar grandes manchas de
+        # piedra desnuda (celdas de 10 cm: 40 celdas son 0,4 m²).
+        tamano = escenas.RUINA["ajustes"]["paso"] * 2.4 * escenas.RUINA["ajustes"]["hojas"]["tamano"]
+        for semilla in (1, 2, 3):
+            c = self.c if semilla == 1 else ruina(semilla=semilla)
+            hojas = colocar_hojas(c, ParametrosHojas(semilla=semilla, tamano=tamano))
+            vacias, mayor = calvas_frente(hojas)
+            self.assertLess(vacias, 0.12, "semilla %d" % semilla)
+            self.assertLess(mayor, 40, "semilla %d" % semilla)
+
+    def test_las_hojas_de_los_colgantes_no_quedan_de_canto(self):
+        # Un tallo que cuelga bajo un saliente (el dintel de la ventana) tiene
+        # por superficie más cercana un techo: sus hojas no deben quedar
+        # tumbadas mirando arriba o abajo, que de frente no se ven.
+        tamano = escenas.RUINA["ajustes"]["paso"] * 2.4 * escenas.RUINA["ajustes"]["hojas"]["tamano"]
+        hojas = colocar_hojas(self.c, ParametrosHojas(semilla=1, tamano=tamano))
+        colgantes = {tuple(round(x, 4) for x in q)
+                     for r in self.c.ramas if r.colgante for q in r.puntos[1:]}
+        suyas = [h for h in hojas if tuple(round(x, 4) for x in h.tallo) in colgantes]
+        tumbadas = [h for h in suyas if abs(h.normal[1]) > 0.8]
+        self.assertGreater(len(suyas), 100)
+        self.assertLess(len(tumbadas), 0.04 * len(suyas))
 
     def test_nada_bajo_el_suelo(self):
         # El suelo de la escena es una caja fina: ningún paso debe atravesarla.

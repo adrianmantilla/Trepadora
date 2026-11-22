@@ -405,11 +405,14 @@ class Crecimiento:
                         and v.distancia(nuevo, cercano2) < p.distancia_adherencia * 0.5)):
                 rama.viva = False
             return
+        # El tallo principal es el tronco de la planta: no lo ahogan los brotes
+        # que le salen alrededor de la base.
+        tolerancia = 2.0 if principal else (1.3 if rama.cortina else 1.0)
         if (len(rama.puntos) >= rama.longitud_max
                 or rama.pasos_sueltos > self._sueltos_max
                 or (not principal and rama.pasos_suelo > p.pasos_suelo_max)
                 or (principal and rama.toco_pared and rama.pasos_suelo > 3 * p.pasos_suelo_max)
-                or (len(rama.puntos) > 6 and len(vecinos) > p.densidad_max * (1.3 if rama.cortina else 1))):
+                or (len(rama.puntos) > 6 and len(vecinos) > p.densidad_max * tolerancia)):
             rama.viva = False
 
     def _quiza_brotar(self, rama: Rama, indice: int, nuevas: List[Rama]) -> None:
@@ -554,7 +557,9 @@ class Crecimiento:
         if any(abs(i - b) < p.separacion_brotes for b in rama.brotes):
             return
         rama.brotes.append(i)
-        largo = int(p.largo_colgante * (0.35 + 0.65 * self.rng.random()))
+        # Muchas cortas y pocas largas: un reparto parejo deja una fila de
+        # hilos del mismo largo que se ve artificial.
+        largo = int(p.largo_colgante * (0.2 + 0.8 * self.rng.random() ** 2))
         lado = v.escala(v.tangente(self._aleatorio(), v.ARRIBA), 0.2)
         direccion = v.unitario(v.suma(v.suma(v.ABAJO, v.escala(salida, 0.4)), lado)) or v.ABAJO
         self._nuevas.append(Rama(puntos=[rama.puntos[i]], normales=[rama.normales[i]],
