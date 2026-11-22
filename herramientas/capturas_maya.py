@@ -44,6 +44,7 @@ VARIANTES = {
     "semilla1": ("sencilla", dict(semilla=1), VISTAS),
     "semilla4_colgante": ("sencilla", dict(semilla=4, gravedad=1.0, prob_rama=0.08), VISTAS),
     "ruina_semilla1": ("ruina", dict(semilla=1), VISTAS_RUINA),
+    "ruina_semilla1_ramillas": ("ruina", dict(semilla=1, ramillas=0.08), VISTAS_RUINA),
 }
 
 
