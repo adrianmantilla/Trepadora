@@ -27,7 +27,7 @@ GRUPO_PLANTA = "trepadora_planta_grp"
 _COLORES = [7, 23, 14, 26]
 # Aclara los colores de hojas y rabillos una vez pasados a lineal (ver
 # _a_lineal): con la vista ACES de Maya, la hiedra sale casi negra si no.
-_BRILLO_HOJAS = 1.6
+_BRILLO_HOJAS = 1.3
 
 
 def _es_malla(nodo):
