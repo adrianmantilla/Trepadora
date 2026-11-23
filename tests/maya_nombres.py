@@ -251,6 +251,13 @@ def instalar():
         def setVertexColors(self, colores, indices):
             pass
 
+        def setUVs(self, us, vs):
+            assert len(us) == len(vs)
+            self.uvs = len(us)
+
+        def assignUVs(self, conteos, indices):
+            assert sum(conteos) == len(indices) and max(indices) < self.uvs
+
     class MFnDagNode(object):
         def __init__(self, objeto):
             self.objeto = objeto
@@ -260,7 +267,7 @@ def instalar():
 
     om.MObject, om.MFnMesh, om.MFnDagNode = MObject, MFnMesh, MFnDagNode
     om.MPoint = om.MColor = lambda *a: a
-    om.MPointArray = om.MColorArray = list
+    om.MPointArray = om.MColorArray = om.MFloatArray = om.MIntArray = list
 
     api = types.ModuleType("maya.api")
     api.OpenMaya = om

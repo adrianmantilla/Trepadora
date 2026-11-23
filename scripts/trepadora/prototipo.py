@@ -394,6 +394,7 @@ def _crear_malla(nombre, malla, brillo=1.0):
     colores = om.MColorArray([om.MColor(_a_lineal(c, lineal, brillo) + (1.0,))
                               for c in malla.colores])
     fn.setVertexColors(colores, list(range(len(malla.vertices))))
+    _poner_uvs(fn, malla)
     _suavizar(fn)
     cmds.rename(om.MFnDagNode(objeto).fullPathName(), nombre)
     # Tras renombrar, la ruta desde el propio nodo: el nombre puede repetirse
@@ -402,6 +403,16 @@ def _crear_malla(nombre, malla, brillo=1.0):
     forma = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
     cmds.setAttr(forma + ".displayColors", 1)
     return transform
+
+
+def _poner_uvs(fn, malla):
+    """Las UVs de la malla, en el conjunto de UVs por defecto (map1)."""
+    import maya.api.OpenMaya as om
+
+    if not malla.uvs or len(malla.uv_indices) != len(malla.indices):
+        return
+    fn.setUVs(om.MFloatArray([u for u, _ in malla.uvs]), om.MFloatArray([v for _, v in malla.uvs]))
+    fn.assignUVs(om.MIntArray(malla.conteos), om.MIntArray(malla.uv_indices))
 
 
 def _suavizar(fn):

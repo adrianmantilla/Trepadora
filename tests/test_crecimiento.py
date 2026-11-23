@@ -483,6 +483,70 @@ class PruebasGrosorHojasMallas(unittest.TestCase):
             self.assertTrue(all(0 <= i < len(malla.vertices) for i in malla.indices))
             self.assertTrue(all(n in (3, 4) for n in malla.conteos))
 
+    def _mallas(self, forma="hiedra"):
+        hojas = colocar_hojas(self.c, ParametrosHojas(tamano=2.0))
+        return {"tallos": geometria.malla_tallos(self.c, self.radios, tipo="nudoso"),
+                "hojas": geometria.malla_hojas(hojas, forma=forma),
+                "rabillos": geometria.malla_peciolos(hojas)}
+
+    def test_uvs_validas(self):
+        for forma in geometria.FORMAS_HOJA:
+            for nombre, malla in self._mallas(forma).items():
+                with self.subTest(forma=forma, malla=nombre):
+                    self.assertEqual(len(malla.uv_indices), len(malla.indices))
+                    self.assertTrue(all(0 <= i < len(malla.uvs) for i in malla.uv_indices))
+                    if nombre != "tallos":   # una UV por vértice
+                        self.assertEqual(len(malla.uvs), len(malla.vertices))
+                        self.assertEqual(malla.uv_indices, malla.indices)
+
+    def test_uvs_de_hoja_dentro_del_cuadrado(self):
+        """Cada forma cabe en su textura, con el nervio en u = 0,5 y la base abajo."""
+        for forma in geometria.FORMAS_HOJA:
+            uvs = self._mallas(forma)["hojas"].uvs
+            us, vs = [u for u, _ in uvs], [v_ for _, v_ in uvs]
+            with self.subTest(forma=forma):
+                self.assertGreater(min(us), 0.0)
+                self.assertLess(max(us), 1.0)
+                self.assertGreater(min(vs), 0.0)
+                self.assertLess(max(vs), 1.0)
+                self.assertAlmostEqual(min(vs) + max(vs), 1.0, places=6)
+                # La hoja más ancha llena la textura (sin desperdiciar más de un 15 %).
+                if geometria.ESCALA_UV[forma] > 1.1:
+                    self.assertGreater(max(us) - min(us), 0.85)
+        modelo = geometria.Malla()
+        geometria._lamina(modelo, geometria.perfil_hoja("hiedra"), (0.3, 0.4, 0.1, 0.1),
+                          __import__("random").Random(1), (0.1, 0.3, 0.1),
+                          lambda cx, cy, cz: (cx, cy, cz), geometria.ESCALA_UV["hiedra"])
+        # Mismas UVs aunque la hoja se curve, se pliegue y se tuerza: el nervio
+        # central (u = 0,5) va de la base a la punta.
+        nervio = [i for i, (u, _) in enumerate(modelo.uvs) if abs(u - 0.5) < 1e-9]
+        self.assertEqual(len(nervio), len(geometria.perfil_hoja("hiedra")))
+
+    def test_uvs_de_tallo_con_costura_y_avance(self):
+        """La textura da una vuelta al tubo y avanza a lo largo de la rama."""
+        malla = self._mallas()["tallos"]
+        lados = geometria.TIPOS_TALLO["nudoso"]["lados"]
+        us = [u for u, _ in malla.uvs]
+        self.assertAlmostEqual(min(us), 0.0)
+        self.assertAlmostEqual(max(us), 1.0)
+        # Cada cara de un anillo al siguiente abarca un lado (1/lados de vuelta),
+        # también la de la costura, que va de u = (lados-1)/lados a u = 1.
+        k = 0
+        for n in malla.conteos:
+            caras = [malla.uvs[i] for i in malla.uv_indices[k:k + n]]
+            k += n
+            ancho = max(u for u, _ in caras) - min(u for u, _ in caras)
+            self.assertLessEqual(ancho, 1.0 / lados + 1e-9)
+            if n == 4:
+                self.assertLess(caras[0][1], caras[3][1])   # v avanza hacia la punta
+        # A lo largo, la textura no se estira: en el tronco, un lado de un
+        # anillo y un tramo de rama de la misma medida tienen la misma v.
+        rama, radios = self.c.ramas[0], self.radios[0]
+        largo = sum(v.largo(v.resta(b, a)) for a, b in zip(rama.puntos, rama.puntos[1:4]))
+        vueltas = largo / (2.0 * 3.141592653589793 * radios[1])
+        v3 = malla.uvs[(lados + 1) * 3][1]
+        self.assertAlmostEqual(v3, vueltas, delta=0.15 * vueltas)
+
 
 if __name__ == "__main__":
     unittest.main()
