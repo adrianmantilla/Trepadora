@@ -2,44 +2,114 @@
 
 Plugin para generar plantas trepadoras en Autodesk Maya 2026 y 2027, pensado para estudiantes.
 
-> **Estado: fase 0 (prototipo del crecimiento).** Todavía no hay interfaz: se usa desde el
-> Script Editor. Genera tallos con grosor, rabillos y hojas (instancias de unas pocas hojas
-> modelo, o una sola malla), o solo curvas para ir rápido.
+> **Estado: fase 1 (ventana para el aula).** Ventana acoplable con los pasos en orden,
+> preajustes e instalador de un solo gesto. Genera tallos con grosor, rabillos y hojas
+> (instancias de unas pocas hojas modelo, o una sola malla) con materiales de Arnold.
 
-No necesita instalar nada: funciona con el Python que trae Maya (no usa NumPy).
+Funciona igual en Windows y en macOS, con el Python que trae Maya: no hay que instalar
+nada más (no usa NumPy).
 
-## Probar el prototipo en Maya
+## Instalar
 
-1. Descarga o clona este repositorio, por ejemplo en `C:/trepadora` o `~/trepadora`.
-2. Abre el Script Editor de Maya, pestaña **Python**, y ejecuta (cambia la ruta por la tuya):
+1. Descarga este repositorio (botón **Code → Download ZIP** en GitHub) y descomprímelo
+   en una carpeta que no vayas a mover, por ejemplo `Documentos/Trepadora`.
+2. Abre Maya y **arrastra el archivo `instalar.py`** de esa carpeta al visor.
 
-   ```python
-   import sys
-   sys.path.append(r"C:/trepadora/scripts")   # en macOS: "/Users/tu_usuario/trepadora/scripts"
+Eso es todo. El instalador:
 
-   import trepadora.prototipo as tp
-   tp.escena_de_prueba()        # crea suelo, muro, caja y un localizador, y hace crecer
-   tp.escena_ruina()            # una pequeña ruina: muro con ventana, columna y murete
-   ```
+- escribe `trepadora.mod` en la carpeta de módulos de tu usuario de Maya, apuntando a la
+  carpeta de Trepadora, para que Maya la encuentre cada vez que arranca;
+- carga el plug-in y lo marca para que se cargue solo (aparece el menú **Trepadora**);
+- crea el estante **Trepadora** con un botón que abre la ventana;
+- abre la ventana.
 
-3. Para usar tu propia escena: selecciona una o varias mallas y, si quieres, uno o varios
-   localizadores donde nace cada planta. Después:
+No copia nada: si mueves la carpeta, vuelve a arrastrar `instalar.py`. Para actualizar a
+una versión nueva, sustituye la carpeta y arrastra otra vez `instalar.py` (no hace falta
+reiniciar Maya).
 
-   ```python
-   tp.ejecutar(semilla=3)                   # tallos y hojas
-   tp.ejecutar(semilla=3, modo="curvas")    # solo líneas, para probar ajustes rápido
-   tp.ejecutar(semilla=3, forma_hoja="corazon", tipo_tallo="verde")
-   tp.ejecutar(semilla=3, hoja_propia="miHoja")   # tu propia hoja modelada
-   tp.ejecutar(semilla=3, instancias=False)       # todas las hojas en una malla
-   ```
+**Desinstalar:** en el Script Editor, pestaña Python, ejecuta (con tu ruta):
 
-   Sin localizadores, la planta nace en la base del primer objeto seleccionado.
-   Pulsa **Esc** para detener el crecimiento; todo se deshace con un solo **Ctrl+Z**.
+```python
+import sys; sys.path.insert(0, r"C:/ruta/a/Trepadora")   # la carpeta de instalar.py
+import instalar; instalar.desinstalar()
+```
 
-4. Para renderizar con Arnold, carga Arnold (MtoA) **antes** de hacer crecer la planta. Así
-   cada pieza lleva además un material de Arnold que toma el color de cada hoja; las hojas
-   dejan pasar algo de luz y a contraluz brillan. Si Arnold no está cargado, la planta solo
-   lleva el material del visor y en el render todas las hojas salen del mismo verde.
+Quita el módulo, el plug-in y el estante. No borra la carpeta ni tus preajustes.
+
+## Usar la ventana
+
+Abre la ventana con el botón del estante o con **Trepadora → Abrir Trepadora…**. Se puede
+acoplar a un lado de Maya y recuerda dónde la dejaste. Los pasos se activan en orden:
+
+1. **Superficie.** Selecciona las mallas por las que trepa la planta (un muro, el suelo,
+   una columna; también vale un grupo) y pulsa **Usar selección**. Si entre lo seleccionado
+   hay localizadores, se usan como puntos de nacimiento.
+2. **Origen** (opcional). Pulsa **Clic en el visor** y haz clic sobre la superficie donde
+   nace cada planta; **Quitar** los borra. Sin orígenes, la planta nace en el centro de la
+   base de la superficie.
+3. **Aspecto.** Tipo de tallo, forma de hoja, Tamaño, Densidad de hojas y Grosor del tallo.
+   Pulsa **Crecer** para ver la forma como líneas (es rápido). Cambia ajustes y vuelve a
+   pulsar Crecer hasta que te guste; **Crecer más** la hace más grande sin empezar de cero
+   y **Reiniciar** borra las líneas.
+4. **Crear malla.** Crea los tallos con grosor, las hojas y los materiales, y deja la
+   planta seleccionada. Todo se deshace con un solo **Ctrl+Z**; **Esc** detiene el
+   crecimiento y se conserva lo crecido.
+
+El pie de la ventana dice cuántas hojas saldrán y si la carga es baja, media o alta. Con
+carga alta, la ventana pregunta antes de crear la malla.
+
+**Cuando la planta para sola.** La planta deja de crecer cuando llena el espacio que tiene
+o cuando sus ramas llegan a su largo máximo, así que a partir de ahí subir el Tamaño no la
+hace más grande. La ventana lo dice al crecer. Si pararon por su largo, **Crecer más** las
+alarga; si llenó el espacio, añade otra malla en el paso 1 o pon un origen en una zona libre.
+
+**Ajustes avanzados** (plegados): crecimiento (semilla, escala, adherencia, gravedad, luz,
+ramificación…), hojas (tamaño, caída, manchas, bronce, instancias y **hoja propia**: una
+malla tuya que se usa como hoja) y la resolución de los tallos. Cada ajuste explica qué hace
+al dejar el ratón encima.
+
+**Preajustes.** El desplegable de arriba trae cinco: Hiedra de fachada, Enredadera colgante,
+Musgo trepador, Hoja de corazón y Ramas secas. Con el botón **…** puedes guardar los tuyos,
+importarlos y exportarlos como archivos `.json` (para repartirlos a la clase), borrar los
+tuyos y volver a los valores por defecto. Los tuyos se guardan en la carpeta de preferencias
+de Maya, en `trepadora/preajustes`.
+
+**La escena recuerda.** La superficie, los orígenes, la hoja propia y los ajustes se guardan
+en la escena (grupo `trepadora_origenes_grp`): al abrirla otro día la ventana sigue donde
+estaba. Cada planta creada guarda además los ajustes y la semilla con que se hizo: selecciónala
+y usa **… → Copiar los ajustes de la planta seleccionada** para repetirla o revisar cómo se hizo.
+
+**Escenas de prueba.** En el menú **Trepadora** hay dos escenas listas para practicar: muro
+y caja, y una pequeña ruina.
+
+**Arnold.** Si Arnold (MtoA) está cargado al crear la malla, cada pieza lleva además un
+material de Arnold que toma el color de cada hoja; las hojas dejan pasar algo de luz y a
+contraluz brillan. Si no está cargado, la planta solo lleva el material del visor y en el
+render todas las hojas salen del mismo verde.
+
+## Uso desde el Script Editor (avanzado)
+
+Lo mismo se puede hacer sin la ventana. Con Trepadora instalada, en la pestaña **Python**:
+
+```python
+import trepadora.prototipo as tp
+tp.escena_de_prueba()        # crea suelo, muro, caja y un localizador, y hace crecer
+tp.escena_ruina()            # una pequeña ruina: muro con ventana, columna y murete
+```
+
+Para usar tu propia escena: selecciona una o varias mallas y, si quieres, uno o varios
+localizadores donde nace cada planta. Después:
+
+```python
+tp.ejecutar(semilla=3)                   # tallos y hojas
+tp.ejecutar(semilla=3, modo="curvas")    # solo líneas, para probar ajustes rápido
+tp.ejecutar(semilla=3, forma_hoja="corazon", tipo_tallo="verde")
+tp.ejecutar(semilla=3, hoja_propia="miHoja")   # tu propia hoja modelada
+tp.ejecutar(semilla=3, instancias=False)       # todas las hojas en una malla
+```
+
+Sin localizadores, la planta nace en la base del primer objeto seleccionado. Sin instalar,
+añade antes la carpeta `scripts` a `sys.path`.
 
 ### Hojas, tallos y tipos
 
@@ -116,7 +186,17 @@ objetos seleccionados.
 ## Estructura
 
 ```
+instalar.py           instalador: se arrastra al visor de Maya
+plug-ins/
+  trepadora_plugin.py plug-in de Maya: crea el menú Trepadora
+icons/trepadora.png   icono del estante
 scripts/trepadora/
+  ajustes.py          los ajustes de la ventana, sus rangos y los preajustes (no depende de Maya)
+  preajustes/         los preajustes incluidos (.json)
+  sesion.py           lo que hace la ventana: superficie, orígenes, crecer, crear malla
+  ui/ventana.py       la ventana (PySide6, acoplable)
+  ui/herramienta.py   herramienta de clic en el visor para colocar orígenes
+  menu.py             menú Trepadora
   crecimiento.py      algoritmo de crecimiento y grosor (no depende de Maya)
   hojas.py            colocación de hojas
   geometria.py        mallas de tallos, hojas y rabillos en Python puro; tipos de tallo y hoja
@@ -124,13 +204,25 @@ scripts/trepadora/
   vectores.py         operaciones con vectores
   superficie_maya.py  consultas de punto más cercano sobre mallas de Maya
   escenas.py          escenas de prueba (sencilla y ruina) y sus ajustes
-  prototipo.py        prueba de la fase 0 en Maya
+  prototipo.py        crea en Maya la vista previa, la planta y sus materiales
   i18n/               textos por idioma (es.json); la interfaz se puede traducir
 herramientas/
+  prueba_ventana.py   prueba de la ventana dentro de Maya, botón a botón, con capturas
+  ensayo_sin_maya/    ensayo de la ventana con un Maya simulado (necesita PySide6)
+  prueba_instancias.py  prueba de las hojas como instancias (mayapy)
   capturas_maya.py    genera las capturas de comparación en Maya
   render_arnold.py    render de prueba de la ruina con Arnold, con cielo y sol (mayapy)
   diagnostico.py      cifras del crecimiento de la ruina, iguales dentro y fuera de Maya
 tests/                pruebas sin Maya, con una escena simulada
 ```
 
-Pruebas automáticas (fuera de Maya, con Python 3): `python -m unittest discover tests`
+Pruebas automáticas (fuera de Maya, con Python 3): `python -m unittest discover tests`.
+Las de la ventana necesitan PySide6 (`pip install PySide6`); si no está, se saltan.
+
+## Traducir la interfaz
+
+Todos los textos están en `scripts/trepadora/i18n/es.json`. Para otro idioma, copia el
+archivo con el código del idioma (por ejemplo `en.json`), traduce los valores sin tocar las
+claves ni lo que va entre llaves, y en Maya ejecuta
+`cmds.optionVar(stringValue=("trepadoraIdioma", "en"))` y reinicia Maya. Lo que falte por
+traducir sale en español.

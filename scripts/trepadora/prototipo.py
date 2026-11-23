@@ -112,6 +112,33 @@ def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, paso=N
         xmin, ymin, zmin, xmax, ymax, zmax = caja
         crecimiento.anadir_origen(((xmin + xmax) / 2.0, ymin, (zmin + zmax) / 2.0))
 
+    cmds.undoInfo(openChunk=True, chunkName="Trepadora")
+    try:
+        hechos, cancelado = crecer_con_progreso(crecimiento, pasos)
+        if modo == "curvas":
+            grupo = crear_vista_previa(crecimiento.curvas())
+        else:
+            grupo = crear_planta(crecimiento, paso_escena, hojas or {}, grosor, semilla,
+                                 instancias=instancias, forma_hoja=forma_hoja,
+                                 tipo_tallo=tipo_tallo, hoja_propia=hoja_propia)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+    if cancelado:
+        cmds.warning(t("cancelado"))
+    if crecimiento.limite_alcanzado:
+        cmds.warning(t("limite", limite=parametros.limite_puntos))
+    print(t("resumen", ramas=len(crecimiento.ramas), puntos=crecimiento.total_puntos,
+            pasos=hechos, semilla=semilla))
+    cmds.select(grupo, replace=True)
+    return grupo
+
+
+def crecer_con_progreso(crecimiento, pasos):
+    """Hace ``pasos`` pasos con una barra de progreso que se detiene con Esc.
+
+    Devuelve ``(pasos_hechos, cancelado)``. Lo crecido hasta Esc se conserva.
+    """
     cancelado = {"valor": False}
 
     def al_progresar(paso, total):
@@ -123,29 +150,13 @@ def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, paso=N
                                 status=t("progreso_estado", paso=paso, total=total))
         return True
 
-    cmds.undoInfo(openChunk=True, chunkName="Trepadora")
     cmds.progressWindow(title=t("progreso_titulo"), progress=0, isInterruptable=True,
                         status=t("progreso_estado", paso=0, total=pasos))
     try:
-        hechos = crecimiento.crecer(al_progresar=al_progresar)
-        if modo == "curvas":
-            grupo = crear_vista_previa(crecimiento.curvas())
-        else:
-            grupo = crear_planta(crecimiento, paso_escena, hojas or {}, grosor, semilla,
-                                 instancias=instancias, forma_hoja=forma_hoja,
-                                 tipo_tallo=tipo_tallo, hoja_propia=hoja_propia)
+        hechos = crecimiento.crecer(pasos, al_progresar=al_progresar)
     finally:
         cmds.progressWindow(endProgress=True)
-        cmds.undoInfo(closeChunk=True)
-
-    if cancelado["valor"]:
-        cmds.warning(t("cancelado"))
-    if crecimiento.limite_alcanzado:
-        cmds.warning(t("limite", limite=parametros.limite_puntos))
-    print(t("resumen", ramas=len(crecimiento.ramas), puntos=crecimiento.total_puntos,
-            pasos=hechos, semilla=semilla))
-    cmds.select(grupo, replace=True)
-    return grupo
+    return hechos, cancelado["valor"]
 
 
 def crear_vista_previa(curvas):
@@ -170,8 +181,13 @@ def _elegir(valor, opciones, por_defecto, clave_aviso, **datos):
 
 
 def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instancias=True,
-                 forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None):
-    """Crea tallos, hojas y rabillos dentro de un grupo nuevo (ver ``ejecutar``)."""
+                 forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None, lados=None,
+                 resumen=None):
+    """Crea tallos, hojas y rabillos dentro de un grupo nuevo (ver ``ejecutar``).
+
+    ``lados``: lados del tubo de los tallos (por defecto, los del tipo de tallo).
+    ``resumen``: si se da un diccionario, se rellena con ``hojas`` y ``modelos``.
+    """
     forma_hoja = _elegir(forma_hoja, geometria.FORMAS_HOJA, "hiedra", "forma_desconocida",
                          forma=forma_hoja)
     tipo_tallo = _elegir(tipo_tallo, tuple(geometria.TIPOS_TALLO), "lenoso",
@@ -189,7 +205,8 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instan
     grupo = cmds.group(empty=True, name=GRUPO_PLANTA)
     piezas = [
         ("trepadora_tallos",
-         geometria.malla_tallos(crecimiento, radios, semilla=semilla, tipo=tipo_tallo),
+         geometria.malla_tallos(crecimiento, radios, lados=lados, semilla=semilla,
+                                tipo=tipo_tallo),
          (0.30, 0.21, 0.13)),
         ("trepadora_rabillos", geometria.malla_peciolos(hojas, tipo=tipo_tallo),
          (0.25, 0.33, 0.12)),
@@ -212,6 +229,8 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instan
         sombreado = _asignar_material(transform, nombre + "_mat", color, brillo)
         _material_arnold(transform, sombreado, nombre, color, brillo)
         cmds.parent(transform, grupo)
+    if resumen is not None:
+        resumen.update(hojas=len(hojas), modelos=modelos)
     if modelos:
         print(t("resumen_instancias", hojas=len(hojas), modelos=modelos))
     else:
@@ -511,8 +530,9 @@ def crear_escena(nombre="sencilla"):
                            subdivisionsX=1, subdivisionsY=1)[0]
     cmds.move(centro[0], centro[1] + tam[1] / 2.0, centro[2], suelo)
     mallas = [suelo]
-    for nombre_caja, c, t in datos["cajas"]:
-        caja = cmds.polyCube(name="prueba_" + nombre_caja, width=t[0], height=t[1], depth=t[2])[0]
+    for nombre_caja, c, medidas in datos["cajas"]:
+        caja = cmds.polyCube(name="prueba_" + nombre_caja, width=medidas[0], height=medidas[1],
+                             depth=medidas[2])[0]
         cmds.move(c[0], c[1], c[2], caja)
         mallas.append(caja)
     localizadores = []

@@ -123,6 +123,8 @@ class Rama:
     # Índice del punto de la madre del que brota.
     indice_en_madre: int = 0
     viva: bool = True
+    # Por qué paró: "largo", "aire", "suelo", "espacio", "limite" o "" si sigue viva.
+    motivo: str = ""
     pasos_sueltos: int = 0
     pasos_suelo: int = 0
     # Rama que cae pegada a la pared (cortina), solo con caída > 0.
@@ -271,6 +273,7 @@ class Crecimiento:
                 continue
             if self.total_puntos >= self.p.limite_puntos:
                 rama.viva = False
+                rama.motivo = "limite"
                 self.limite_alcanzado = True
                 continue
             self._avanzar(rama, indice)
@@ -421,20 +424,27 @@ class Crecimiento:
 
         if rama.colgante:
             # Un tallo colgante para al llegar al suelo o a su largo.
-            if (len(rama.puntos) + rama.roce >= rama.longitud_max
-                    or (v.punto(normal2, self._luz) > 0.75
-                        and v.distancia(nuevo, cercano2) < p.distancia_adherencia * 0.5)):
-                rama.viva = False
+            if len(rama.puntos) + rama.roce >= rama.longitud_max:
+                rama.viva, rama.motivo = False, "largo"
+            elif (v.punto(normal2, self._luz) > 0.75
+                    and v.distancia(nuevo, cercano2) < p.distancia_adherencia * 0.5):
+                rama.viva, rama.motivo = False, "suelo"
             return
         # El tallo principal es el tronco de la planta: no lo ahogan los brotes
         # que le salen alrededor de la base.
         tolerancia = 2.0 if principal else (1.3 if rama.cortina else 1.0)
-        if (len(rama.puntos) >= rama.longitud_max
-                or rama.pasos_sueltos > self._sueltos_max
-                or (not principal and rama.pasos_suelo > p.pasos_suelo_max)
-                or (principal and rama.toco_pared and rama.pasos_suelo > 3 * p.pasos_suelo_max)
-                or (len(rama.puntos) > 6 and len(vecinos) > p.densidad_max * tolerancia)):
-            rama.viva = False
+        motivo = ""
+        if len(rama.puntos) >= rama.longitud_max:
+            motivo = "largo"
+        elif rama.pasos_sueltos > self._sueltos_max:
+            motivo = "aire"
+        elif ((not principal and rama.pasos_suelo > p.pasos_suelo_max)
+                or (principal and rama.toco_pared and rama.pasos_suelo > 3 * p.pasos_suelo_max)):
+            motivo = "suelo"
+        elif len(rama.puntos) > 6 and len(vecinos) > p.densidad_max * tolerancia:
+            motivo = "espacio"
+        if motivo:
+            rama.viva, rama.motivo = False, motivo
 
     def _quiza_brotar(self, rama: Rama, indice: int, nuevas: List[Rama]) -> None:
         p = self.p
@@ -713,6 +723,14 @@ class Crecimiento:
         return v.unitario((g(0.0, 1.0), g(0.0, 1.0), g(0.0, 1.0))) or v.CERO
 
     # -------------------------------------------------------------- resultado
+    def motivos_de_parada(self) -> Dict[str, int]:
+        """Puntos de planta en ramas paradas, por motivo (ver ``Rama.motivo``)."""
+        motivos: Dict[str, int] = {}
+        for r in self.ramas:
+            if not r.viva and r.motivo:
+                motivos[r.motivo] = motivos.get(r.motivo, 0) + len(r.puntos)
+        return motivos
+
     def curvas(self) -> List[Tuple[int, List[Vector]]]:
         """Lista de (generación, puntos) de cada rama con al menos dos puntos."""
         return [(r.generacion, list(r.puntos)) for r in self.ramas if len(r.puntos) >= 2]

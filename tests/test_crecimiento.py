@@ -127,6 +127,19 @@ class PruebasCrecimiento(unittest.TestCase):
         self.assertTrue(c.limite_alcanzado)
         self.assertLessEqual(c.total_puntos, 400 + len(c.ramas))
 
+    def test_cada_rama_parada_dice_por_que(self):
+        c = escena(semilla=3, pasos=900)
+        self.assertFalse(any(r.viva for r in c.ramas))
+        motivos = c.motivos_de_parada()
+        self.assertTrue(set(motivos) <= {"largo", "aire", "suelo", "espacio"}, motivos)
+        self.assertEqual(sum(motivos.values()), c.total_puntos)
+        corta = escena(semilla=3, pasos=900, longitud_max=30, generaciones_max=1)
+        self.assertEqual(max(corta.motivos_de_parada(), key=corta.motivos_de_parada().get),
+                         "largo")
+        limite = crecer(Muro(), semilla=1, pasos=500, prob_rama=0.5, limite_puntos=400,
+                        generaciones_max=6, reduccion_por_generacion=0.95)
+        self.assertIn("limite", limite.motivos_de_parada())
+
     def test_cancelar_conserva_lo_generado(self):
         c = Crecimiento(Muro(), Parametros(pasos=100))
         c.anadir_origen((0.0, 0.0, 0.5))
