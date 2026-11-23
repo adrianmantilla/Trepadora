@@ -168,6 +168,15 @@ class PruebasMateriales(unittest.TestCase):
         self.assertEqual(texturas.resolucion_de("a/b/4k/c.jpg"), "4k")
         self.assertIsNone(texturas.resolucion_de("c.jpg"))
 
+    def test_sin_arnold_no_avisa(self):
+        """Sin MtoA, buscar las texturas no pregunta por aiImage (Maya avisaría al abrir escenas)."""
+        self.escena.arnold = False
+        self._planta(1, resolucion_texturas="1k")
+        self.assertTrue(self._rutas())
+        texturas.reparar_rutas()
+        self.assertTrue(texturas.cambiar_resolucion("2k"))
+        self.assertFalse([a for a in self.escena.avisos if "Unknown object type" in a])
+
     def test_planta_para_exportar(self):
         """La seleccionada (o la de una pieza suya); sin selección, la única que haya."""
         from trepadora import exportar

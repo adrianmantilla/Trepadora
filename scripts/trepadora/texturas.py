@@ -124,12 +124,26 @@ def recordar_resolucion(resolucion):
     cmds.optionVar(stringValue=(OPCION, resolucion))
 
 
+TIPOS_DE_IMAGEN = (("file", "fileTextureName"), ("aiImage", "filename"))
+
+
+def _arnold_cargado(cmds):
+    try:
+        return bool(cmds.pluginInfo("mtoa", query=True, loaded=True))
+    except (AttributeError, RuntimeError):
+        return False
+
+
 def nodos_de_textura():
     """Nodos de imagen de Trepadora en la escena: ``[(nodo, atributo de ruta, juego, mapa)]``."""
     from maya import cmds
 
     resultado = []
-    for tipo, atributo in (("file", "fileTextureName"), ("aiImage", "filename")):
+    for tipo, atributo in TIPOS_DE_IMAGEN:
+        # Sin Arnold cargado, Maya no conoce aiImage y ``ls(type="aiImage")``
+        # avisa «Unknown object type» (y esto corre al abrir cada escena).
+        if tipo.startswith("ai") and not _arnold_cargado(cmds):
+            continue
         for nodo in cmds.ls(type=tipo) or []:
             if cmds.attributeQuery(ATRIBUTO, node=nodo, exists=True):
                 juego, mapa = de_clave(cmds.getAttr(nodo + "." + ATRIBUTO))

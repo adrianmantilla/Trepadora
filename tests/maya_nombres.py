@@ -105,6 +105,10 @@ def instalar():
         return bool(e.coincidencias(nombre))
 
     def ls(*nombres, long=False, type=None, **_):
+        if type is not None and type.startswith("ai") and not e.arnold:
+            # Como Maya: sin MtoA no conoce los tipos de Arnold y avisa.
+            e.avisos.append("Unknown object type: " + type)
+            return []
         res = []
         if not nombres and type is not None:
             nombres = ("*",)
