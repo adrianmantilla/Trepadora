@@ -77,7 +77,7 @@ Se pasan como diccionario: `tp.ejecutar(semilla=2, hojas={"densidad": 0.6, "tama
 | --- | --- | --- |
 | `densidad` | 0.82 | Probabilidad de hoja en cada punto de rama |
 | `tamano` | 1.0 | Tamaño relativo de las hojas |
-| `variacion` | 0.4 | Diferencia de tamaño entre hojas |
+| `variacion` | 0.5 | Diferencia de tamaño entre hojas |
 | `puntas_jovenes` | 14 | Puntos desde la punta en los que las hojas son pequeñas |
 | `peciolo` | 0.28 | Largo del rabillo, relativo al tamaño de la hoja |
 | `despegue` | 0.35 | Cuánto se separan de la pared |

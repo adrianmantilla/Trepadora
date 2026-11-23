@@ -20,7 +20,7 @@ class ParametrosHojas:
     # Largo de una hoja adulta, en unidades de la escena.
     tamano: float = 1.0
     # Variación aleatoria del tamaño (0 = todas iguales).
-    variacion: float = 0.4
+    variacion: float = 0.5
     # Puntos desde la punta en los que las hojas todavía son pequeñas.
     puntas_jovenes: int = 14
     # Largo del pecíolo (rabillo), como fracción del tamaño de la hoja.
@@ -197,8 +197,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             if adelante is None:
                 continue
 
-            # La cara mira hacia fuera y a la luz, con giro al azar.
-            cara = v.suma(normal_sup, v.escala(_aleatorio(rng), 0.7))
+            # La cara mira hacia fuera y a la luz, con giro al azar: en la pared,
+            # bastante, para que la masa no se lea como una alfombra; en lo que
+            # cuelga, menos, que una hoja de canto de frente no se ve.
+            cara = v.suma(normal_sup, v.escala(_aleatorio(rng), 0.6 if colgante else 0.85))
             cara = v.suma(cara, v.escala(v.ARRIBA, 0.25))
             cara = v.unitario(v.tangente(cara, adelante))
             if cara is None:

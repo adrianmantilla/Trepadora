@@ -47,12 +47,16 @@ CONTRALUZ = dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40, sol=(-28, 160,
 PIEDRA = (0.55, 0.52, 0.47)
 # Manchas de la piedra: ruido en el espacio de la escena (rasgos de unas 15
 # unidades), entre un tono más oscuro y otro más claro que PIEDRA. El relieve,
-# de otro ruido más fino y con más octavas, para que no salga un grano
-# uniforme como de gotelé.
-DESGASTE = dict(escala=0.07, oscuro=0.7, claro=1.15, escala_relieve=0.15, relieve=0.4)
+# de otro ruido más fino, con más octavas y algo retorcido, para que no salga
+# un grano uniforme como de gotelé ni una piedra lisa.
+DESGASTE = dict(escala=0.07, oscuro=0.7, claro=1.15, escala_relieve=0.15, relieve=0.9,
+                retorcido=0.5)
 SUELO = (0.32, 0.31, 0.28)
-# En el suelo, manchas más pequeñas: grandes, se leen como nubes.
-DESGASTE_SUELO = dict(DESGASTE, escala=0.14)
+# En el suelo, manchas más pequeñas (grandes, se leen como nubes) y, por debajo,
+# un campo de rodales de tierra y hierba seca de unas 150 unidades: el suelo
+# llega hasta el horizonte y, gris y liso, parecía agua o asfalto.
+DESGASTE_SUELO = dict(DESGASTE, escala=0.14, relieve=0.4,
+                      campo=(0.006, (0.30, 0.25, 0.18), (0.17, 0.19, 0.08)))
 
 
 def _iniciar():
@@ -97,12 +101,25 @@ def _desgaste(cmds, nombre, shader, color, desgaste):
     esta versión de Arnold, la piedra se queda lisa y el render sigue.
     """
     try:
-        oscuro = tuple(c * desgaste["oscuro"] for c in color)
-        claro = tuple(min(1.0, c * desgaste["claro"]) for c in color)
-        manchas = _ruido(cmds, nombre + "_manchas", desgaste["escala"], oscuro, claro)
-        cmds.connectAttr(manchas + ".outColor", shader + ".baseColor", force=True)
+        if "campo" in desgaste:
+            # Rodales grandes de color, aclarados y oscurecidos por las manchas.
+            escala, color_a, color_b = desgaste["campo"]
+            campo = _ruido(cmds, nombre + "_campo", escala, color_a, color_b, octavas=5)
+            manchas = _ruido(cmds, nombre + "_manchas", desgaste["escala"],
+                             (desgaste["oscuro"],) * 3, (desgaste["claro"],) * 3)
+            mezcla = cmds.shadingNode("aiMultiply", asUtility=True, name=nombre + "_mezcla")
+            cmds.connectAttr(campo + ".outColor", mezcla + ".input1", force=True)
+            cmds.connectAttr(manchas + ".outColor", mezcla + ".input2", force=True)
+            cmds.connectAttr(mezcla + ".outColor", shader + ".baseColor", force=True)
+        else:
+            oscuro = tuple(c * desgaste["oscuro"] for c in color)
+            claro = tuple(min(1.0, c * desgaste["claro"]) for c in color)
+            manchas = _ruido(cmds, nombre + "_manchas", desgaste["escala"], oscuro, claro)
+            cmds.connectAttr(manchas + ".outColor", shader + ".baseColor", force=True)
         granos = _ruido(cmds, nombre + "_granos", desgaste["escala_relieve"],
                         (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), octavas=6)
+        if desgaste.get("retorcido"):
+            cmds.setAttr(granos + ".distortion", desgaste["retorcido"])
         relieve = cmds.shadingNode("bump2d", asUtility=True, name=nombre + "_relieve")
         cmds.setAttr(relieve + ".bumpDepth", desgaste["relieve"])
         cmds.connectAttr(granos + ".outColorR", relieve + ".bumpValue", force=True)
