@@ -493,10 +493,12 @@ class Sesion:
 
     # ------------------------------------------------------------ exportar
     def planta_para_exportar(self):
-        """La planta seleccionada o, si no hay, la última creada (o None)."""
-        planta = exportar.planta_de()
+        """La planta seleccionada; si no hay, la última creada o la única de la escena (o None)."""
+        planta = exportar.planta_de(sola=False)
         if planta is None and self.ultima_planta and cmds.objExists(self.ultima_planta):
             planta = self.ultima_planta
+        if planta is None and not cmds.ls(selection=True):
+            planta = exportar.planta_de()
         return planta
 
     def exportar(self, ruta):

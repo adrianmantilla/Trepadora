@@ -209,21 +209,41 @@ def _cmds():
     return cmds
 
 
-def planta_de(nodo=None):
-    """El grupo de la planta de Trepadora de ``nodo`` o de la selección (o None)."""
-    cmds = _cmds()
+def _es_planta(nodo):
     from .prototipo import GRUPO_PLANTA
 
+    cmds = _cmds()
+    return (cmds.attributeQuery(ATR_PLANTA, node=nodo, exists=True)
+            or nodo.split("|")[-1].startswith(GRUPO_PLANTA))
+
+
+def plantas_en_escena():
+    """Los grupos de plantas de Trepadora que hay en la escena."""
+    from .prototipo import GRUPO_PLANTA
+
+    cmds = _cmds()
+    return [n for n in cmds.ls(GRUPO_PLANTA + "*", long=True, type="transform") or []
+            if _es_planta(n)]
+
+
+def planta_de(nodo=None, sola=True):
+    """El grupo de la planta de Trepadora de ``nodo`` o de la selección (o None).
+
+    Sin nada seleccionado, con ``sola`` y una sola planta en la escena, esa.
+    """
+    cmds = _cmds()
     candidatos = [nodo] if nodo else cmds.ls(selection=True, long=True) or []
     for c in candidatos:
         actual = (cmds.ls(c, long=True) or [None])[0]
         while actual:
-            corto = actual.split("|")[-1]
-            if (cmds.attributeQuery(ATR_PLANTA, node=actual, exists=True)
-                    or corto.startswith(GRUPO_PLANTA)):
+            if _es_planta(actual):
                 return actual
             padres = cmds.listRelatives(actual, parent=True, fullPath=True)
             actual = padres[0] if padres else None
+    if not candidatos and sola:
+        plantas = plantas_en_escena()
+        if len(plantas) == 1:
+            return plantas[0]
     return None
 
 
@@ -284,14 +304,24 @@ def _arrays(forma, atributo):
     return []
 
 
+def instanciador_de(planta):
+    """El instanciador de las hojas de la planta (o None)."""
+    cmds = _cmds()
+    for h in cmds.listRelatives(planta, children=True, fullPath=True) or []:
+        if cmds.nodeType(h) == "instancer":
+            return h
+    # Por si alguna versión de Maya no lo da entre los hijos.
+    for h in cmds.ls(type="instancer", long=True) or []:
+        if h.startswith(planta + "|"):
+            return h
+    return None
+
+
 def hojas_de(planta):
     """Las hojas de la planta en una malla (de sus instancias o de su malla de hojas)."""
     cmds = _cmds()
     malla_hojas = _hijo(planta, "trepadora_hojas", "transform")
-    instanciador = None
-    for h in cmds.listRelatives(planta, children=True, fullPath=True) or []:
-        if cmds.nodeType(h) == "instancer":
-            instanciador = h
+    instanciador = instanciador_de(planta)
     if instanciador is None:
         if malla_hojas and cmds.listRelatives(malla_hojas, shapes=True, type="mesh"):
             return leer_malla(malla_hojas), [malla_hojas]

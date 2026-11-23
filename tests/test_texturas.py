@@ -168,6 +168,19 @@ class PruebasMateriales(unittest.TestCase):
         self.assertEqual(texturas.resolucion_de("a/b/4k/c.jpg"), "4k")
         self.assertIsNone(texturas.resolucion_de("c.jpg"))
 
+    def test_planta_para_exportar(self):
+        """La seleccionada (o la de una pieza suya); sin selección, la única que haya."""
+        from trepadora import exportar
+
+        primera = self.cmds.ls(self._planta(1), long=True)[0]
+        self.assertEqual(exportar.planta_de(), primera)
+        self.assertTrue(exportar.instanciador_de(primera).startswith(primera + "|"))
+        segunda = self.cmds.ls(self._planta(2, instancias=False), long=True)[0]
+        self.assertIsNone(exportar.planta_de())
+        self.assertIsNone(exportar.instanciador_de(segunda))
+        self.assertEqual(exportar.planta_de(segunda + "|trepadora_tallos"), segunda)
+        self.assertEqual(sorted(exportar.plantas_en_escena()), sorted([primera, segunda]))
+
     def test_sin_texturas_la_planta_sale_igual(self):
         shutil.rmtree(self.carpeta)
         os.makedirs(self.carpeta)

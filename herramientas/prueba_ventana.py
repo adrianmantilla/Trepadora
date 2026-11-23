@@ -627,11 +627,6 @@ def _redondear(valores, n=2):
     return [round(x, n) for x in valores] if valores else valores
 
 
-def _hijos_de_tipo(padre, tipo):
-    return [h for h in cmds.listRelatives(padre, children=True, fullPath=True) or []
-            if cmds.nodeType(h) == tipo]
-
-
 def _reimportar(ruta, formato):
     """Importa lo exportado, apunta sus mallas y materiales, y lo vuelve a borrar."""
     antes = set(cmds.ls(long=True))
@@ -676,7 +671,7 @@ def _comparar_horneado(planta):
     """
     from trepadora import exportar as ex
 
-    instanciador = _hijos_de_tipo(planta, "instancer")[0]
+    instanciador = ex.instanciador_de(planta)
     original = ex._matriz
     datos = {}
     for caso, mover, girar in (("quieta", (0, 0, 0), (0, 0, 0)),
@@ -738,8 +733,14 @@ def exportar(v):
     from trepadora import exportar as ex
 
     carpeta = os.path.join(_SALIDA, "exportar prueba ñ")
+    # Como un estudiante: sin nada seleccionado, la única planta de la escena.
+    # (Tras «Escena nueva», Maya avisa a la ventana cuando ya ha acabado el
+    # paso anterior y la sesión no recuerda la última planta creada.)
+    cmds.select(clear=True)
     planta = v.sesion.planta_para_exportar()
-    datos = {"planta": planta, "resolucion": v.sesion.resolucion_texturas()}
+    datos = {"planta": planta, "plantas": ex.plantas_en_escena(),
+             "instanciador": ex.instanciador_de(planta) if planta else None,
+             "resolucion": v.sesion.resolucion_texturas()}
     nodos_antes = len(cmds.ls())
     for formato in ("fbx", "abc"):
         ruta = os.path.join(carpeta, "planta ruina." + formato)
@@ -749,22 +750,31 @@ def exportar(v):
         _procesar()
         d = {"segundos": round(time.time() - inicio, 2), "mensaje": v.mensaje.text(),
              "existe": os.path.isfile(ruta)}
-        if d["existe"]:
-            d["mb"] = round(os.path.getsize(ruta) / 1e6, 2)
-            texturas_dir = ex.carpeta_texturas(ruta)
-            d["texturas"] = {n: os.path.getsize(os.path.join(texturas_dir, n))
-                             for n in sorted(os.listdir(texturas_dir))}
-            with open(os.path.join(texturas_dir, "trepadora_exportar.json"),
-                      encoding="utf-8") as f:
-                d["informe"] = json.load(f)
-            d["reimportado"] = _reimportar(ruta, formato)
         datos[formato] = d
+        try:
+            if d["existe"]:
+                d["mb"] = round(os.path.getsize(ruta) / 1e6, 2)
+                texturas_dir = ex.carpeta_texturas(ruta)
+                d["texturas"] = {n: os.path.getsize(os.path.join(texturas_dir, n))
+                                 for n in sorted(os.listdir(texturas_dir))}
+                with open(os.path.join(texturas_dir, "trepadora_exportar.json"),
+                          encoding="utf-8") as f:
+                    d["informe"] = json.load(f)
+                inicio = time.time()
+                d["reimportado"] = _reimportar(ruta, formato)
+                d["reimportar_s"] = round(time.time() - inicio, 2)
+        except Exception:
+            d["error"] = traceback.format_exc()
         if formato == "fbx":
             datos["captura"] = _captura_ventana(v, "7_exportar")
     del v._pedir_ruta_exportar
     datos["restos"] = cmds.ls(ex.PREFIJO + "*") + cmds.ls("planta_ruina*")
     datos["nodos_antes_despues"] = [nodos_antes, len(cmds.ls())]
-    datos["comparar"] = _comparar_horneado(planta)
+    try:
+        datos["comparar"] = _comparar_horneado(planta)
+    except Exception:
+        datos["comparar_error"] = traceback.format_exc()
+        cmds.xform(planta, translation=(0, 0, 0), rotation=(0, 0, 0), worldSpace=True)
     return datos
 
 
