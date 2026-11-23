@@ -180,6 +180,9 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = None,
 _RAIZ = (0.36, 0.28, 0.19)
 # Puntos del final de cada rama sin raíces: lo joven aún no se ha agarrado.
 _RAICES_SIN_PUNTA = 6
+# Probabilidad de un grupo de raíces en cada punto pegado, con «Raíces adhesivas» a 1
+# (a 0,5, la mitad): un grupo cada dos o tres puntos, como una franja a los lados.
+_RAICES_PROB = 0.7
 
 
 def anadir_raices(malla: Malla, crecimiento, radios: List[List[float]], cantidad: float,
@@ -203,7 +206,7 @@ def anadir_raices(malla: Malla, crecimiento, radios: List[List[float]], cantidad
             continue
         puntos = rama.puntos
         for k in range(1, len(puntos) - _RAICES_SIN_PUNTA):
-            if rng.random() >= cantidad * 0.3:
+            if rng.random() >= cantidad * _RAICES_PROB:
                 continue
             p, r = puntos[k], radios_rama[k]
             cercano, normal = crecimiento.cercano(p)
@@ -221,7 +224,7 @@ def anadir_raices(malla: Malla, crecimiento, radios: List[List[float]], cantidad
                 salida = v.unitario(v.suma(v.escala(lado, signo), v.escala(normal, -0.4)))
                 inicio = v.suma(p, v.escala(salida, r * 0.85))
                 # ...y llega a la pared algo apartada del tallo y más abajo.
-                fin = v.suma(cercano, v.escala(lado, signo * r * rng.uniform(1.3, 3.0)))
+                fin = v.suma(cercano, v.escala(lado, signo * r * rng.uniform(1.6, 3.4)))
                 fin = v.suma(fin, v.escala(adelante, r * rng.uniform(-1.0, 1.0)))
                 fin = v.suma(fin, v.escala(abajo, r * rng.uniform(0.0, 1.2)))
                 # Junto a una arista la pared se acaba: la raíz se agarra donde
@@ -231,8 +234,8 @@ def anadir_raices(malla: Malla, crecimiento, radios: List[List[float]], cantidad
                     continue
                 fin = v.suma(apoyo, v.escala(normal_apoyo, 0.02 * r))
                 medio = v.escala(v.suma(inicio, fin), 0.5)
-                medio = v.suma(medio, v.escala(normal, v.distancia(inicio, fin) * 0.2))
-                _tubo_fino(malla, (inicio, medio, fin), r * rng.uniform(0.08, 0.13), color)
+                medio = v.suma(medio, v.escala(normal, v.distancia(inicio, fin) * 0.25))
+                _tubo_fino(malla, (inicio, medio, fin), r * rng.uniform(0.09, 0.14), color)
                 hechas += 1
     return hechas
 

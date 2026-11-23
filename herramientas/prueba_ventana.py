@@ -906,6 +906,13 @@ def _vista_previa_dibujada():
     return [len(curvas or []), puntos]
 
 
+def escena_vacia():
+    """Escena nueva, en un paso aparte: el aviso de escena nueva le da a la ventana una
+    sesión nueva cuando Maya queda libre, y el paso siguiente tiene que usar esa."""
+    cmds.file(new=True, force=True)
+    return {"escena": cmds.file(query=True, sceneName=True)}
+
+
 def recortar(v):
     """Recorta el tallo por la mitad con un clic de verdad en el visor y pulsa Ctrl+Z.
 
@@ -918,8 +925,6 @@ def recortar(v):
     from PySide6 import QtWidgets
     from shiboken6 import wrapInstance
 
-    cmds.file(new=True, force=True)
-    _procesar()
     v.escena_de_prueba("sencilla")
     v.controles["pasos"].casilla.setValue(220)
     v.boton_crecer.click()
@@ -950,21 +955,28 @@ def recortar(v):
     return datos
 
 
+def _estado_recorte(v):
+    c = v.sesion._crecimiento
+    datos = {"dibujada": _vista_previa_dibujada()}
+    if c is None:
+        datos["sin_crecimiento"] = True
+    else:
+        datos.update({"total": c.total_puntos, "ramas": len(c.ramas),
+                      "largo_tronco": len(c.ramas[0].puntos)})
+    return datos
+
+
 def recortar_deshecho(v):
     """Tras Ctrl+Z: la rama tiene que haber vuelto. Después, rehacer."""
-    c = v.sesion._crecimiento
-    datos = {"total": c.total_puntos, "ramas": len(c.ramas),
-             "largo_tronco": len(c.ramas[0].puntos), "dibujada": _vista_previa_dibujada(),
-             "al_dia": v.sesion.al_dia(), "rehacer": cmds.undoInfo(query=True, redoName=True)}
+    datos = _estado_recorte(v)
+    datos["rehacer"] = cmds.undoInfo(query=True, redoName=True)
     cmds.redo()
     return datos
 
 
 def recortar_rehecho(v):
     """Tras rehacer: otra vez recortada. Foto, se suelta la herramienta y se crea la malla."""
-    c = v.sesion._crecimiento
-    datos = {"total": c.total_puntos, "ramas": len(c.ramas),
-             "largo_tronco": len(c.ramas[0].puntos), "dibujada": _vista_previa_dibujada()}
+    datos = _estado_recorte(v)
     datos["visor"] = _captura_visor("9_recortar_despues")
     v.boton_recortar.click()
     datos["herramienta_despues"] = cmds.currentCtx()
@@ -997,8 +1009,8 @@ def raices(v):
     c = v.sesion._crecimiento
     q = c.ramas[0].puntos[len(c.ramas[0].puntos) // 3]
     _, normal = c.cercano(q)
-    ojo = tuple(q[i] + 16.0 * normal[i] for i in range(3))
-    ojo = (ojo[0] + 6.0, ojo[1] + 5.0, ojo[2])
+    ojo = tuple(q[i] + 30.0 * normal[i] for i in range(3))
+    ojo = (ojo[0] + 10.5, ojo[1] + 9.0, ojo[2])
     datos["camara"] = {"mira": _redondear(q), "normal": _redondear(normal, 3)}
     _vista(ojo, q, 30)
     datos["visor"] = _captura_visor("10_raices")
@@ -1125,6 +1137,7 @@ def _pasos():
         ("exportar", lambda: exportar(_v())),
         ("exportar_ligeras", lambda: exportar_ligeras(_v())),
         ("zonas_y_guia", lambda: zonas_y_guia(_v())),
+        ("recortar_escena_vacia", escena_vacia),
         ("recortar", lambda: recortar(_v())),
         ("recortar_deshecho", lambda: recortar_deshecho(_v())),
         ("recortar_rehecho", lambda: recortar_rehecho(_v())),
