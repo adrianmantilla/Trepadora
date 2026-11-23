@@ -25,6 +25,7 @@ Al terminar, ``grosores()`` calcula el radio de cada punto: el tallo es más
 grueso donde sostiene más planta y se afina hacia las puntas.
 """
 
+import dataclasses
 import math
 import random
 from dataclasses import dataclass, field
@@ -162,6 +163,13 @@ class Rama:
     brotes: List[int] = field(default_factory=list)
     ramillas: List[int] = field(default_factory=list)
     hijas: List[int] = field(default_factory=list)
+
+
+def _copia(rama: Rama) -> Rama:
+    """Copia de una rama que no comparte listas con ella (los puntos son tuplas)."""
+    return dataclasses.replace(rama, puntos=list(rama.puntos), normales=list(rama.normales),
+                               brotes=list(rama.brotes), ramillas=list(rama.ramillas),
+                               hijas=list(rama.hijas))
 
 
 def consultar(superficie, punto: Vector) -> Tuple[Vector, Vector]:
@@ -808,9 +816,95 @@ class Crecimiento:
                 motivos[r.motivo] = motivos.get(r.motivo, 0) + len(r.puntos)
         return motivos
 
-    def curvas(self) -> List[Tuple[int, List[Vector]]]:
-        """Lista de (generación, puntos) de cada rama con al menos dos puntos."""
+    def curvas(self, con_indice: bool = False) -> List[tuple]:
+        """Lista de (generación, puntos) de cada rama con al menos dos puntos.
+
+        Con ``con_indice``, (índice de la rama, generación, puntos).
+        """
+        if con_indice:
+            return [(i, r.generacion, list(r.puntos)) for i, r in enumerate(self.ramas)
+                    if len(r.puntos) >= 2]
         return [(r.generacion, list(r.puntos)) for r in self.ramas if len(r.puntos) >= 2]
+
+    # ------------------------------------------------------------- recortar
+    def recortar(self, cortes) -> int:
+        """Corta ramas. Devuelve cuántos puntos se quitaron.
+
+        Cada corte es ``(rama, punto)``: la rama pierde ese punto y los que
+        siguen, junto con todo lo que brota de ahí en adelante, y deja de
+        crecer. Con ``punto`` 0 o 1 se va la rama entera.
+        """
+        quitar, desde = set(), {}
+        for i, k in cortes:
+            if not 0 <= i < len(self.ramas):
+                continue
+            k = max(0, int(k))
+            if k < 2:
+                quitar.add(i)
+            elif k < len(self.ramas[i].puntos):
+                desde[i] = min(desde.get(i, k), k)
+        # Lo que brota de un tramo quitado se va con él (la madre siempre va
+        # antes que sus hijas en la lista).
+        for i, rama in enumerate(self.ramas):
+            m = rama.madre
+            if m is not None and (m in quitar or (m in desde and rama.indice_en_madre >= desde[m])):
+                quitar.add(i)
+        for i in quitar:
+            desde.pop(i, None)
+        if not quitar and not desde:
+            return 0
+        sobran = {i: set(self.ramas[i].puntos[k:]) for i, k in desde.items()}
+        nuevo_indice: Dict[int, int] = {}
+        ramas: List[Rama] = []
+        for i, rama in enumerate(self.ramas):
+            if i in quitar:
+                continue
+            nuevo_indice[i] = len(ramas)
+            ramas.append(rama)
+            if i in desde:
+                k = desde[i]
+                del rama.puntos[k:]
+                del rama.normales[k:]
+                rama.brotes = [b for b in rama.brotes if b < k]
+                rama.ramillas = [b for b in rama.ramillas if b < k]
+                rama.viva, rama.motivo = False, "recortada"
+        for rama in ramas:
+            if rama.madre is not None:
+                rama.madre = nuevo_indice[rama.madre]
+            rama.hijas = [nuevo_indice[h] for h in rama.hijas if h in nuevo_indice]
+        self.ramas = ramas
+        # La rejilla conserva el orden en que se anotaron los puntos: si la
+        # planta sigue creciendo, lo hace igual que si nunca hubieran existido
+        # los puntos quitados... salvo por su ausencia.
+        antes = self.total_puntos
+        total = 0
+        for clave, lista in list(self._rejilla._celdas.items()):
+            quedan = [(q, nuevo_indice[r]) for q, r in lista
+                      if r in nuevo_indice and not (r in sobran and q in sobran[r])]
+            if quedan:
+                self._rejilla._celdas[clave] = quedan
+            else:
+                del self._rejilla._celdas[clave]
+            total += len(quedan)
+        self.total_puntos = total
+        alturas = [v.punto(q, self._luz) for r in self.ramas for q in r.puntos]
+        self._altura = [min(alturas), max(alturas)] if alturas else [None, None]
+        return antes - total
+
+    def foto(self) -> dict:
+        """Copia del estado, para volver a él con ``restaurar`` (deshacer un recorte)."""
+        return {"ramas": [_copia(r) for r in self.ramas], "rng": self.rng.getstate(),
+                "celdas": {k: list(l) for k, l in self._rejilla._celdas.items()},
+                "total": self.total_puntos, "altura": list(self._altura),
+                "limite": self.limite_alcanzado}
+
+    def restaurar(self, foto: dict) -> None:
+        self.ramas = [_copia(r) for r in foto["ramas"]]
+        self.rng.setstate(foto["rng"])
+        self._rejilla._celdas = {k: list(l) for k, l in foto["celdas"].items()}
+        self.total_puntos = foto["total"]
+        self._altura = list(foto["altura"])
+        self.limite_alcanzado = foto["limite"]
 
     def grosores(self, radio_base: float, radio_punta: float) -> List[List[float]]:
         """Radio de cada punto de cada rama.

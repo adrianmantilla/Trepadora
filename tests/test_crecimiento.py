@@ -632,5 +632,62 @@ class PruebasGuias(unittest.TestCase):
         self.assertLess(min(sin_guia), 60.0)
 
 
+
+class PruebasRecortar(unittest.TestCase):
+    def _coherente(self, c):
+        """Índices de madres e hijas al día, y la rejilla con los puntos que hay."""
+        for i, rama in enumerate(c.ramas):
+            if rama.madre is not None:
+                self.assertLess(rama.madre, i)
+                self.assertIn(i, c.ramas[rama.madre].hijas)
+            for h in rama.hijas:
+                self.assertEqual(c.ramas[h].madre, i)
+        self.assertEqual(c.total_puntos, sum(len(r.puntos) for r in c.ramas))
+        self.assertEqual(sum(len(l) for l in c._rejilla._celdas.values()), c.total_puntos)
+
+    def test_cortar_a_media_rama_quita_lo_que_brota_despues(self):
+        c = escena(semilla=2)
+        tronco = c.ramas[0]
+        k = len(tronco.puntos) // 2
+        antes, despues = [], []
+        for h in tronco.hijas:
+            (antes if c.ramas[h].indice_en_madre < k else despues).append(c.ramas[h].puntos[1])
+        self.assertTrue(antes and despues)
+        total = c.total_puntos
+        quitados = c.recortar([(0, k)])
+        self.assertEqual(len(c.ramas[0].puntos), k)
+        self.assertFalse(c.ramas[0].viva)
+        self.assertEqual(c.ramas[0].motivo, "recortada")
+        self.assertEqual(c.total_puntos, total - quitados)
+        segundos = {r.puntos[1] for r in c.ramas if len(r.puntos) > 1}
+        self.assertTrue(all(p in segundos for p in antes))
+        self.assertFalse(any(p in segundos for p in despues))
+        self._coherente(c)
+
+    def test_quitar_una_rama_entera_y_seguir_creciendo(self):
+        c = escena(semilla=3, pasos=90)
+        # Una rama con hijas: se va entera, con sus hijas y nietas.
+        i = next(i for i, r in enumerate(c.ramas) if r.madre is not None and r.hijas)
+        hija = c.ramas[c.ramas[i].hijas[0]].puntos[-1]
+        n = len(c.ramas)
+        c.recortar([(i, 0)])
+        self.assertLess(len(c.ramas), n)
+        self.assertFalse(any(hija in r.puntos for r in c.ramas))
+        self._coherente(c)
+        c.crecer(40)
+        self._coherente(c)
+        self.assertTrue(all(r.motivo != "recortada" or not r.viva for r in c.ramas))
+
+    def test_restaurar_deja_la_planta_como_estaba(self):
+        a = escena(semilla=4, pasos=70)
+        foto = a.foto()
+        a.recortar([(0, 5)])
+        a.restaurar(foto)
+        a.crecer(30)
+        b = escena(semilla=4, pasos=70)
+        b.crecer(30)
+        self.assertEqual([r.puntos for r in a.ramas], [r.puntos for r in b.ramas])
+
+
 if __name__ == "__main__":
     unittest.main()

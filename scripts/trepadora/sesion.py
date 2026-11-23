@@ -11,9 +11,11 @@ creada guarda además los ajustes y la semilla con que se hizo, para poder
 repetirla o corregir el trabajo.
 """
 
+import collections
 import json
 import math
 import time
+import uuid
 
 import maya.api.OpenMaya as om
 from maya import cmds
@@ -32,6 +34,12 @@ ATR_AJUSTES = "trepadoraAjustes"
 ATR_HOJA_PROPIA = "trepadoraHojaPropia"
 ATR_ZONAS = "trepadoraZonas"
 ATR_GUIAS = "trepadoraGuias"
+# En el grupo de la vista previa: qué crecimiento dibuja (para deshacer un recorte).
+ATR_VERSION = "trepadoraVersion"
+# Crecimientos que se recuerdan para deshacer y rehacer (Crecer, Crecer más, Recortar).
+MAX_VERSIONES = 40
+# Distancia máxima, en píxeles del visor, entre el clic y la rama que se recorta.
+PIXELES_RECORTE = 14
 ATR_PLANTA = "trepadoraAjustes"
 OPCION_ULTIMOS = "trepadoraUltimosAjustes"
 # Paso de crecimiento por defecto: esta fracción de la diagonal de la superficie.
@@ -120,6 +128,10 @@ class Sesion:
         self._pasos_pedidos = 0
         self.vista_previa = None
         self.ultima_planta = None
+        # Versión del crecimiento que dibuja la vista previa y las anteriores,
+        # para que deshacer un recorte (o Crecer más) devuelva la planta de antes.
+        self._version = None
+        self._versiones = collections.OrderedDict()
         self.leer_escena()
         if ajustes is not None:
             self.ajustes, _ = aj.limpiar(ajustes)
@@ -227,6 +239,23 @@ class Sesion:
             self.superficies, self.zonas, self.guias = [], [], []
         self.vista_previa = (_largo(prototipo.GRUPO_VISTA_PREVIA)
                              if cmds.objExists(prototipo.GRUPO_VISTA_PREVIA) else None)
+        if self.vista_previa:
+            version = self._version_de(self.vista_previa)
+            if version != self._version and version in self._versiones:
+                self._volver_a(version)
+
+    def _version_de(self, grupo):
+        if not cmds.attributeQuery(ATR_VERSION, node=grupo, exists=True):
+            return None
+        return cmds.getAttr(grupo + "." + ATR_VERSION)
+
+    def _volver_a(self, version):
+        """Devuelve el crecimiento al estado que dibujaba la vista previa ``version``."""
+        crecimiento, foto, firma, paso, hechos, pedidos = self._versiones[version]
+        crecimiento.restaurar(foto)
+        self._crecimiento, self._firma, self._paso = crecimiento, firma, paso
+        self._pasos_hechos, self._pasos_pedidos = hechos, pedidos
+        self._version = version
 
     # ------------------------------------------------------ zonas prohibidas
     def usar_zonas(self):
@@ -535,7 +564,76 @@ class Sesion:
 
     def _dibujar_vista_previa(self):
         self._borrar_vista_previa()
-        self.vista_previa = _largo(prototipo.crear_vista_previa(self._crecimiento.curvas()))
+        grupo = _largo(prototipo.crear_vista_previa(self._crecimiento.curvas()))
+        self._version = uuid.uuid4().hex[:12]
+        cmds.addAttr(grupo, longName=ATR_VERSION, dataType="string")
+        cmds.setAttr(grupo + "." + ATR_VERSION, self._version, type="string")
+        self._versiones[self._version] = (self._crecimiento, self._crecimiento.foto(), self._firma,
+                                          self._paso, self._pasos_hechos, self._pasos_pedidos)
+        while len(self._versiones) > MAX_VERSIONES:
+            self._versiones.popitem(last=False)
+        self.vista_previa = grupo
+
+    # ------------------------------------------------------------- recortar
+    def recortar_en(self, x, y, panel=None):
+        """Corta la rama que pasa bajo el píxel (x, y) del visor, desde ese punto.
+
+        Se va también todo lo que brota de la rama más allá del corte. Devuelve
+        cuántos puntos de planta se quitaron.
+        """
+        if self._crecimiento is None:
+            raise Aviso(t("recortar_sin_planta"))
+        sitio = self._punto_de_planta_bajo(x, y, panel)
+        if sitio is None:
+            raise Aviso(t("recortar_fuera"))
+        return self.recortar([sitio])
+
+    def recortar(self, cortes):
+        """Aplica ``cortes`` (ver ``Crecimiento.recortar``) y vuelve a dibujar la vista previa."""
+        cmds.undoInfo(openChunk=True, chunkName="Trepadora")
+        try:
+            quitados = self._crecimiento.recortar(cortes)
+            self._dibujar_vista_previa()
+        finally:
+            cmds.undoInfo(closeChunk=True)
+        return quitados
+
+    def _punto_de_planta_bajo(self, x, y, panel=None):
+        """(rama, punto) de la planta más cerca del píxel (x, y) del visor, o None.
+
+        Entre los puntos a pocos píxeles del clic, el más cercano a la cámara:
+        el que se ve delante.
+        """
+        import maya.api.OpenMayaUI as omui
+
+        vista = None
+        if panel:
+            try:
+                vista = omui.M3dView.getM3dViewFromModelPanel(panel)
+            except RuntimeError:
+                vista = None
+        if vista is None:
+            vista = omui.M3dView.active3dView()
+        origen, rumbo = om.MPoint(), om.MVector()
+        vista.viewToWorld(int(x), int(y), origen, rumbo)
+        candidatos = []
+        limite = PIXELES_RECORTE * PIXELES_RECORTE
+        for i, rama in enumerate(self._crecimiento.ramas):
+            for k, q in enumerate(rama.puntos):
+                punto = om.MPoint(q[0], q[1], q[2])
+                en_vista = vista.worldToView(punto)
+                if len(en_vista) > 2 and not en_vista[2]:
+                    continue
+                d2 = (en_vista[0] - x) ** 2 + (en_vista[1] - y) ** 2
+                if d2 <= limite:
+                    candidatos.append((d2, (punto - origen) * rumbo, i, k))
+        if not candidatos:
+            return None
+        mejor = math.sqrt(min(c[0] for c in candidatos))
+        # Entre los que están casi igual de cerca del clic (3 píxeles), el de delante.
+        cerca = [c for c in candidatos if math.sqrt(c[0]) <= mejor + 3.0]
+        _, _, i, k = min(cerca, key=lambda c: c[1])
+        return i, k
 
     def hay_crecimiento(self):
         return self._crecimiento is not None

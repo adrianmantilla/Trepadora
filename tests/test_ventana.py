@@ -190,9 +190,13 @@ class PruebasVentana(unittest.TestCase):
         self.assertTrue(v.boton_malla.isEnabled())
         self.assertFalse(v.boton_mas.isEnabled())
         self.assertIn("muro", v.estado_superficie.text())
+        self.assertFalse(v.boton_recortar.isEnabled())
         v.boton_crecer.click()
         self.assertTrue(v.boton_mas.isEnabled())
+        self.assertTrue(v.boton_recortar.isEnabled())
         self.assertIn("12.345", v.estado_pie.text())
+        v.boton_reiniciar.click()
+        self.assertFalse(v.boton_recortar.isEnabled())
 
     def test_zonas_prohibidas_y_curva_guia(self):
         v = self.v

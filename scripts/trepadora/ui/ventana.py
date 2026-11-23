@@ -433,7 +433,14 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         for boton in (self.boton_crecer, self.boton_mas, self.boton_reiniciar):
             boton.setMinimumHeight(32)
             fila.addWidget(boton)
-        return fila
+        columna = QtWidgets.QVBoxLayout()
+        columna.addLayout(fila)
+        self.boton_recortar = QtWidgets.QPushButton(t("recortar"))
+        self.boton_recortar.setCheckable(True)
+        self.boton_recortar.setToolTip(t("ayuda_recortar"))
+        self.boton_recortar.toggled.connect(self._recortar_visor)
+        columna.addWidget(self.boton_recortar)
+        return columna
 
     def _avanzados(self):
         self.plegable_avanzados = Plegable(t("avanzados"))
@@ -519,6 +526,9 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         crecido = s.hay_crecimiento()
         self.boton_mas.setEnabled(hay and crecido)
         self.boton_reiniciar.setEnabled(crecido)
+        if not crecido and self.boton_recortar.isChecked():
+            self.boton_recortar.setChecked(False)
+        self.boton_recortar.setEnabled(crecido)
         self._poner_objetos(self.estado_hoja, self.boton_quitar_hoja,
                             [s.hoja_propia] if s.hoja_propia else [], "hojas")
         self._actualizar_pie()
@@ -579,10 +589,28 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         from . import herramienta
 
         if activo:
+            _marcar(self.boton_recortar, False)
             herramienta.activar(self._al_clic)
             self.avisar(t("clic_instrucciones"), aviso=False)
         else:
             herramienta.desactivar()
+
+    def _recortar_visor(self, activo):
+        """Herramienta Recortar: cada clic en el visor corta la rama que hay debajo."""
+        if not EN_MAYA:
+            return
+        from . import herramienta
+
+        if activo:
+            _marcar(self.boton_clic, False)
+            herramienta.activar(self._al_recortar)
+            self.avisar(t("recortar_instrucciones"), aviso=False)
+        else:
+            herramienta.desactivar()
+
+    def _al_recortar(self, x, y, panel=None):
+        if self._hacer(self.sesion.recortar_en, x, y, panel):
+            self.avisar(t("rama_recortada"), aviso=False)
 
     def _al_clic(self, x, y, panel=None):
         if self._hacer(self.sesion.anadir_origen_en, x, y, panel):
@@ -594,10 +622,9 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def _herramienta_cambiada(self):
         from . import herramienta
 
-        if self.boton_clic.isChecked() and not herramienta.activa():
-            self.boton_clic.blockSignals(True)
-            self.boton_clic.setChecked(False)
-            self.boton_clic.blockSignals(False)
+        if not herramienta.activa():
+            _marcar(self.boton_clic, False)
+            _marcar(self.boton_recortar, False)
 
     def _usar_hoja_propia(self):
         nombre = self._hacer(self.sesion.usar_hoja_propia)
@@ -927,6 +954,13 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
 
 # ---------------------------------------------------------------- abrir
 _ventana = None
+
+
+def _marcar(boton, marcado):
+    """Marca o desmarca un botón sin avisar a quien escucha (no cambia la herramienta)."""
+    boton.blockSignals(True)
+    boton.setChecked(marcado)
+    boton.blockSignals(False)
 
 
 def _valida(widget):

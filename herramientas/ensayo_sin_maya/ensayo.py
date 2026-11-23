@@ -94,6 +94,20 @@ def _punto(self, x, y, panel=None):
 ses.Sesion.punto_en_superficie = _punto
 
 
+def _punto_de_planta(self, x, y, panel=None):
+    # x, y = coordenadas de mundo frente al muro: el punto de planta más cercano a (x, y).
+    mejor = None
+    for i, rama in enumerate(self._crecimiento.ramas):
+        for k, q in enumerate(rama.puntos):
+            d = (q[0] - x) ** 2 + (q[1] - y) ** 2
+            if d < 4.0 and (mejor is None or d < mejor[0]):
+                mejor = (d, i, k)
+    return (mejor[1], mejor[2]) if mejor else None
+
+
+ses.Sesion._punto_de_planta_bajo = _punto_de_planta
+
+
 def _planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instancias=True,
             forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None, lados=None,
             resumen=None):
@@ -408,6 +422,46 @@ def p_zonas_y_guia():
     comprobar(not textos_crudos(v), "sin claves sin traducir")
 
 
+def p_recortar():
+    comprobar(not v.boton_recortar.isEnabled() or v.sesion.hay_crecimiento(),
+              "Recortar solo con planta")
+    v.controles["pasos"].casilla.setValue(200)
+    v.boton_crecer.click()
+    comprobar(v.boton_recortar.isEnabled(), "Recortar activo tras crecer")
+    c = v.sesion._crecimiento
+    grupo_antes = v.sesion.vista_previa
+    version_antes = cmds.getAttr(grupo_antes + "." + ses.ATR_VERSION)
+    total = c.total_puntos
+    tronco = c.ramas[0]
+    k = len(tronco.puntos) // 2
+    q = tronco.puntos[k]
+    v._al_recortar(q[0], q[1])
+    print("   mensaje:", v.mensaje.text(), "| puntos:", total, "->", c.total_puntos)
+    comprobar(c.total_puntos < total and len(c.ramas[0].puntos) <= k + 1, "recorta el tallo")
+    comprobar(v.sesion.al_dia(), "la planta recortada sigue al día")
+    version = cmds.getAttr(v.sesion.vista_previa + "." + ses.ATR_VERSION)
+    comprobar(version != version_antes, "vista previa nueva")
+    v._al_recortar(5000, 5000)
+    comprobar("ninguna rama" in v.mensaje.text(), "clic fuera avisa: " + v.mensaje.text())
+    # Ctrl+Z en Maya devuelve el grupo de la vista previa de antes; aquí se imita.
+    cmds.delete(v.sesion.vista_previa)
+    viejo = cmds.group(empty=True, name=prototipo.GRUPO_VISTA_PREVIA)
+    cmds.addAttr(viejo, longName=ses.ATR_VERSION, dataType="string")
+    cmds.setAttr(viejo + "." + ses.ATR_VERSION, version_antes, type="string")
+    v._deshecho()
+    comprobar(v.sesion._crecimiento.total_puntos == total, "deshacer devuelve la rama ({})".format(
+        v.sesion._crecimiento.total_puntos))
+    # Y rehacer la vuelve a quitar.
+    cmds.delete(viejo)
+    nuevo = cmds.group(empty=True, name=prototipo.GRUPO_VISTA_PREVIA)
+    cmds.addAttr(nuevo, longName=ses.ATR_VERSION, dataType="string")
+    cmds.setAttr(nuevo + "." + ses.ATR_VERSION, version, type="string")
+    v._deshecho()
+    comprobar(v.sesion._crecimiento.total_puntos < total, "rehacer la vuelve a quitar")
+    v.boton_malla.click()
+    comprobar("Planta creada" in v.mensaje.text(), "crea la malla recortada: " + v.mensaje.text())
+
+
 def p_guardar_preajuste():
     original = QtWidgets.QInputDialog.getText
     QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("Mi hiedra", True))
@@ -463,7 +517,7 @@ for nombre, f in [("abrir", p_abrir), ("superficie", p_superficie), ("origenes",
                   ("preajuste", p_preajuste), ("malla", p_malla), ("reabrir", p_reabrir),
                   ("ajustes_planta", p_ajustes_planta), ("hoja_propia", p_hoja_propia),
                   ("reiniciar", p_reiniciar), ("sin_origen", p_sin_origen),
-                  ("zonas_y_guia", p_zonas_y_guia),
+                  ("zonas_y_guia", p_zonas_y_guia), ("recortar", p_recortar),
                   ("guardar_preajuste", p_guardar_preajuste), ("escena_prueba", p_escena_prueba),
                   ("carga_alta", p_carga_alta)]:
     paso(nombre, f)
