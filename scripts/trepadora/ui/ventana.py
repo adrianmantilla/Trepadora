@@ -512,8 +512,8 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         else:
             herramienta.desactivar()
 
-    def _al_clic(self, x, y):
-        if self._hacer(self.sesion.anadir_origen_en, x, y):
+    def _al_clic(self, x, y, panel=None):
+        if self._hacer(self.sesion.anadir_origen_en, x, y, panel):
             self.avisar(t("origen_colocado"), aviso=False)
 
     def _quitar_origenes(self):
@@ -731,10 +731,21 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def _escena_nueva(self):
         from ..sesion import Sesion
 
+        if not _valida(self):
+            return
         try:
             self.cambiar_sesion(Sesion())
-        except RuntimeError:
-            pass
+        except Exception:
+            import traceback
+
+            traceback.print_exc()
+
+    def _deshecho(self):
+        """Tras deshacer o rehacer: superficies, hoja propia y vista previa, como en la escena."""
+        if not _valida(self):
+            return
+        self.sesion.revisar_escena()
+        self._actualizar()
 
     def escena_de_prueba(self, nombre):
         self._hacer(self.sesion.preparar_escena_de_prueba, nombre)
@@ -748,8 +759,8 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
             return
         padre = CONTROL if cmds.workspaceControl(CONTROL, exists=True) else None
         eventos = (("SceneOpened", self._escena_nueva), ("NewSceneOpened", self._escena_nueva),
-                   ("ToolChanged", self._herramienta_cambiada), ("Undo", self._actualizar),
-                   ("Redo", self._actualizar))
+                   ("ToolChanged", self._herramienta_cambiada), ("Undo", self._deshecho),
+                   ("Redo", self._deshecho))
         for evento, funcion in eventos:
             opciones = {"event": [evento, funcion]}
             if padre:

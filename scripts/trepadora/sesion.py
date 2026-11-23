@@ -20,7 +20,7 @@ from maya import cmds
 
 from . import ajustes as aj
 from .ajustes import Aviso  # noqa: F401 (la ventana lo importa de aquí o de ajustes)
-from . import escenas, prototipo
+from . import deshacer, escenas, prototipo
 from dataclasses import fields
 
 from .crecimiento import Crecimiento, Parametros
@@ -171,8 +171,25 @@ class Sesion:
         return mallas
 
     def superficies_validas(self):
-        self.superficies = [s for s in self.superficies if cmds.objExists(s)]
-        return self.superficies
+        """Las superficies que siguen en la escena.
+
+        No olvida las que faltan: si se borró una malla y se deshace el borrado,
+        vuelve a contar.
+        """
+        return [s for s in self.superficies if cmds.objExists(s)]
+
+    def revisar_escena(self):
+        """Tras deshacer o rehacer: vuelve a leer de la escena lo que pudo cambiar."""
+        if cmds.objExists(GRUPO_DATOS):
+            guardadas = self._leer_json(ATR_SUPERFICIES, None)
+            if isinstance(guardadas, list):
+                self.superficies = [s for s in guardadas if isinstance(s, str)]
+            propia = self._leer_json(ATR_HOJA_PROPIA, None)
+            self.hoja_propia = propia if propia and cmds.objExists(propia) else None
+        else:
+            self.superficies = []
+        self.vista_previa = (_largo(prototipo.GRUPO_VISTA_PREVIA)
+                             if cmds.objExists(prototipo.GRUPO_VISTA_PREVIA) else None)
 
     def _exigir_superficie(self):
         if not self.superficies_validas():
@@ -187,11 +204,18 @@ class Sesion:
                                    type="transform") or []
         return [h for h in hijos if _es_localizador(h)]
 
-    def punto_en_superficie(self, x, y):
-        """Punto de la superficie bajo el píxel (x, y) del visor activo, o None."""
+    def punto_en_superficie(self, x, y, panel=None):
+        """Punto de la superficie bajo el píxel (x, y) del visor ``panel`` (o del activo), o None."""
         import maya.api.OpenMayaUI as omui
 
-        vista = omui.M3dView.active3dView()
+        vista = None
+        if panel:
+            try:
+                vista = omui.M3dView.getM3dViewFromModelPanel(panel)
+            except RuntimeError:
+                vista = None
+        if vista is None:
+            vista = omui.M3dView.active3dView()
         origen, direccion = om.MPoint(), om.MVector()
         vista.viewToWorld(int(x), int(y), origen, direccion)
         return self.punto_en_rayo(origen, direccion)
@@ -203,7 +227,7 @@ class Sesion:
         rumbo = om.MFloatVector(direccion[0], direccion[1], direccion[2])
         mejor = None
         lista = om.MSelectionList()
-        for nombre in self.superficies:
+        for nombre in self.superficies_validas():
             lista.add(nombre)
         for i in range(lista.length()):
             camino = lista.getDagPath(i)
@@ -220,9 +244,9 @@ class Sesion:
                 mejor = (distancia, (punto.x, punto.y, punto.z))
         return mejor[1] if mejor else None
 
-    def anadir_origen_en(self, x, y):
+    def anadir_origen_en(self, x, y, panel=None):
         """Paso 2: coloca un origen donde se hizo clic. Devuelve el localizador."""
-        punto = self.punto_en_superficie(x, y)
+        punto = self.punto_en_superficie(x, y, panel)
         if punto is None:
             raise Aviso(t("origen_fuera"))
         return self._nuevo_origen(punto)
@@ -235,7 +259,7 @@ class Sesion:
         grupo = self._grupo_datos()
         loc = cmds.spaceLocator(name="trepadora_origen1")[0]
         cmds.move(punto[0], punto[1], punto[2], loc, absolute=True, worldSpace=True)
-        tam = self._paso_automatico() * 6.0 if self.superficies else 1.0
+        tam = self._paso_automatico() * 6.0 if self.superficies_validas() else 1.0
         forma = cmds.listRelatives(loc, shapes=True, fullPath=True)[0]
         cmds.setAttr(forma + ".localScale", tam, tam, tam, type="double3")
         loc = _largo(cmds.parent(loc, grupo)[0])
@@ -265,7 +289,7 @@ class Sesion:
 
     # --------------------------------------------------------------- crecer
     def _paso_automatico(self):
-        caja = cmds.exactWorldBoundingBox(self.superficies)
+        caja = cmds.exactWorldBoundingBox(self.superficies_validas())
         diagonal = math.sqrt(sum((caja[i + 3] - caja[i]) ** 2 for i in range(3)))
         return max(diagonal * FRACCION_PASO, 1e-3)
 
@@ -275,7 +299,7 @@ class Sesion:
         posiciones = [tuple(round(c, 4) for c in cmds.xform(o, query=True, worldSpace=True,
                                                              translation=True))
                       for o in self.origenes()]
-        return json.dumps([self.superficies, posiciones, crecimiento, planta["escala"],
+        return json.dumps([self.superficies_validas(), posiciones, crecimiento, planta["escala"],
                            self.extra], sort_keys=True)
 
     def _olvidar(self):
@@ -294,12 +318,13 @@ class Sesion:
                 "separacion": paso * 0.05, "radio_espacio": paso * 2.0}
         base.update(self.extra)
         base.update(crecimiento)
-        nuevo = Crecimiento(SuperficieMaya(self.superficies), Parametros(**base))
+        superficies = self.superficies_validas()
+        nuevo = Crecimiento(SuperficieMaya(superficies), Parametros(**base))
         origenes = self.origenes()
         for o in origenes:
             nuevo.anadir_origen(cmds.xform(o, query=True, worldSpace=True, translation=True))
         if not origenes:
-            caja = cmds.exactWorldBoundingBox(self.superficies)
+            caja = cmds.exactWorldBoundingBox(superficies)
             nuevo.anadir_origen(((caja[0] + caja[3]) / 2.0, caja[1], (caja[2] + caja[5]) / 2.0))
         self._crecimiento, self._paso = nuevo, paso
         self._firma = self._firma_actual()
@@ -437,19 +462,27 @@ class Sesion:
                     return dict(crecido, planta=None, hojas=0)
             _, hojas, planta = aj.repartir(self.ajustes)
             resumen = {}
-            grupo = prototipo.crear_planta(
-                self._crecimiento, self._paso, hojas, planta["grosor"],
-                self.ajustes["semilla"], instancias=planta["instancias"],
-                forma_hoja=planta["forma_hoja"], tipo_tallo=planta["tipo_tallo"],
-                hoja_propia=self.hoja_propia, lados=planta["lados"], resumen=resumen)
-            grupo = _largo(grupo)
             datos = dict(self.ajustes, _extra=self.extra) if self.extra else dict(self.ajustes)
-            cmds.addAttr(grupo, longName=ATR_PLANTA, dataType="string")
-            cmds.setAttr(grupo + "." + ATR_PLANTA, json.dumps(datos), type="string")
+            crecimiento, paso, semilla = self._crecimiento, self._paso, self.ajustes["semilla"]
+            hoja_propia = self.hoja_propia
+
+            def hacer():
+                # Se vuelve a llamar al rehacer (Ctrl+Shift+Z / Ctrl+Y) tras deshacer.
+                grupo = _largo(prototipo.crear_planta(
+                    crecimiento, paso, hojas, planta["grosor"], semilla,
+                    instancias=planta["instancias"], forma_hoja=planta["forma_hoja"],
+                    tipo_tallo=planta["tipo_tallo"], hoja_propia=hoja_propia,
+                    lados=planta["lados"], resumen=resumen))
+                cmds.addAttr(grupo, longName=ATR_PLANTA, dataType="string")
+                cmds.setAttr(grupo + "." + ATR_PLANTA, json.dumps(datos), type="string")
+                cmds.select(grupo, replace=True)
+                return grupo
+
+            # Un solo Ctrl+Z quita la planta entera (ver deshacer.py).
+            grupo = deshacer.ejecutar(hacer)
             self._borrar_vista_previa()
             self.guardar_ajustes()
             self.ultima_planta = grupo
-            cmds.select(grupo, replace=True)
         finally:
             cmds.undoInfo(closeChunk=True)
         resultado = {"planta": grupo, "hojas": resumen.get("hojas", 0),

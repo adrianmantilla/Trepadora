@@ -84,8 +84,11 @@ def configurar_visor():
 
 
 def _panel_con_camara(camara):
+    # Mejor un visor que se vea: los ocultos miden 1×1 píxel y no sirven para hacer clic.
+    visibles = cmds.getPanel(visiblePanels=True) or []
+    modelos = cmds.getPanel(type="modelPanel") or []
     panel = None
-    for p in cmds.getPanel(type="modelPanel") or []:
+    for p in [m for m in modelos if m in visibles] + modelos:
         if cmds.modelPanel(p, query=True, camera=True):
             panel = p
             break

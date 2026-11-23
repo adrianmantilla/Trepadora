@@ -142,51 +142,78 @@ def escena_sencilla(v):
     return _resumen_sesion(v)
 
 
+def _clic_qt(widget, x, y):
+    """Clic de ratón de verdad (eventos de Qt) en el píxel (x, y) del visor, origen abajo."""
+    from PySide6 import QtCore, QtGui, QtWidgets
+
+    proporcion = widget.devicePixelRatioF()
+    local = QtCore.QPoint(int(round(x / proporcion)), int(round(widget.height() - y / proporcion)))
+    destino = widget.childAt(local) or widget
+    punto = destino.mapFrom(widget, local) if destino is not widget else local
+    global_ = destino.mapToGlobal(punto)
+    for tipo, botones in ((QtCore.QEvent.MouseButtonPress, QtCore.Qt.LeftButton),
+                          (QtCore.QEvent.MouseButtonRelease, QtCore.Qt.NoButton)):
+        evento = QtGui.QMouseEvent(tipo, QtCore.QPointF(punto), QtCore.QPointF(global_),
+                                   QtCore.Qt.LeftButton, botones, QtCore.Qt.NoModifier)
+        QtWidgets.QApplication.sendEvent(destino, evento)
+        _procesar()
+    return {"proporcion_pixeles": proporcion, "widget": [widget.width(), widget.height()],
+            "destino": destino.metaObject().className(), "punto_qt": [punto.x(), punto.y()]}
+
+
 def origen_por_clic(v):
     """Coloca un origen en el muro como si se hiciera clic: primero llamando a la
     función del clic con las coordenadas del visor, después con un clic de verdad."""
     import maya.api.OpenMaya as om
     import maya.api.OpenMayaUI as omui
+    from trepadora.ui import herramienta
 
-    _vista((0, 80, 330), (0, 70, 0))
-    datos = {}
-    vista = omui.M3dView.active3dView()
+    panel = _vista((0, 80, 330), (0, 70, 0))
+    datos = {"panel": panel, "visibles": cmds.getPanel(visiblePanels=True)}
+    vista = omui.M3dView.getM3dViewFromModelPanel(panel)
+    activa = omui.M3dView.active3dView()
+    datos["visor"] = [vista.portWidth(), vista.portHeight()]
+    datos["visor_activo"] = [activa.portWidth(), activa.portHeight()]
     objetivo = om.MPoint(40.0, 90.0, 5.0)
     x, y, dentro = vista.worldToView(objetivo)
     datos["pixel"] = [x, y, dentro]
-    datos["visor"] = [vista.portWidth(), vista.portHeight()]
     antes = len(v.sesion.origenes())
     v.boton_clic.click()
     datos["herramienta_activa"] = cmds.currentCtx()
-    v._al_clic(x, y)
+    v._al_clic(x, y, panel)
     nuevos = v.sesion.origenes()[antes:]
     datos["por_funcion"] = [[round(c, 2) for c in cmds.xform(o, q=True, ws=True, t=True)]
                             for o in nuevos]
     datos["mensaje_funcion"] = v.mensaje.text()
-    # Clic de verdad sobre el visor (para ver si coinciden los píxeles en pantallas Retina).
+    # Clic de verdad sobre el visor: ¿coinciden los píxeles que recibe la herramienta
+    # con los del visor en pantallas Retina?
+    recibidos = []
+    original = herramienta._al_pulsar
+
+    def espia(px, py, panel_clic=None):
+        recibidos.append([px, py, panel_clic])
+        original(px, py, panel_clic)
+
     try:
-        from PySide6 import QtCore, QtWidgets
-        from PySide6.QtTest import QTest
+        from PySide6 import QtWidgets
         from shiboken6 import wrapInstance
 
+        herramienta._al_pulsar = espia
         widget = wrapInstance(int(vista.widget()), QtWidgets.QWidget)
-        proporcion = widget.devicePixelRatioF()
-        datos["proporcion_pixeles"] = proporcion
-        datos["widget"] = [widget.width(), widget.height()]
         antes = len(v.sesion.origenes())
-        punto = QtCore.QPoint(int(round(x / proporcion)),
-                              int(round(widget.height() - y / proporcion)))
-        QTest.mouseClick(widget, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, punto)
-        _procesar()
+        datos.update(_clic_qt(widget, x, y))
         nuevos = v.sesion.origenes()[antes:]
+        datos["clic_recibido"] = recibidos
         datos["por_clic"] = [[round(c, 2) for c in cmds.xform(o, q=True, ws=True, t=True)]
                              for o in nuevos]
         datos["mensaje_clic"] = v.mensaje.text()
     except Exception:
         datos["clic_error"] = traceback.format_exc()
+    finally:
+        herramienta._al_pulsar = original
     # Un clic fuera de la superficie (al cielo) debe avisar sin crear nada.
     antes = len(v.sesion.origenes())
-    v._al_clic(5, vista.portHeight() - 5)
+    v._al_clic(5, vista.portHeight() - 5, panel)
     datos["fuera_crea"] = len(v.sesion.origenes()) - antes
     datos["mensaje_fuera"] = v.mensaje.text()
     v.boton_clic.click()
@@ -246,29 +273,56 @@ def crear_malla(v, nombre="4_malla"):
     return datos
 
 
+def _mallas():
+    return len(cmds.ls(type="mesh") or [])
+
+
+def _hojas_instanciadas():
+    total = 0
+    for p in cmds.ls(type="particle") or []:
+        try:
+            total += cmds.particle(p, query=True, count=True)
+        except RuntimeError:
+            pass
+    return total
+
+
 def deshacer(v):
+    """Ctrl+Z tras Crear malla: la planta entera desaparece de una vez y rehacer la devuelve."""
+    mallas_antes = _mallas()
+    # Lo mismo que hace un estudiante: crear y deshacer enseguida.
+    v.boton_malla.click()
     planta = v.sesion.ultima_planta
+    mallas_con = _mallas()
+    nombre_paso = cmds.undoInfo(query=True, undoName=True)
     cmds.undo()
     _procesar()
-    quitada = not cmds.objExists(planta)
+    datos = {"paso": nombre_paso, "mallas_antes": mallas_antes, "mallas_con_planta": mallas_con,
+             "deshacer_quita_la_planta": not cmds.objExists(planta),
+             "mallas_tras_deshacer": _mallas(),
+             "vista_previa_vuelve": bool(v.sesion.vista_previa
+                                         and cmds.objExists(v.sesion.vista_previa))}
     cmds.redo()
     _procesar()
-    return {"deshacer_quita_la_planta": quitada, "rehacer_la_devuelve": cmds.objExists(planta)}
+    datos.update(rehacer_la_devuelve=cmds.objExists(planta), mallas_tras_rehacer=_mallas(),
+                 instanciadores=len(cmds.ls(type="instancer") or []),
+                 hojas_tras_rehacer=_hojas_instanciadas())
+    datos["visor"] = _captura_visor("4b_rehecha")
+    return datos
 
 
-def guardar_y_reabrir(v):
+def guardar_y_nueva(v):
     ruta = os.path.join(_SALIDA, "prueba_ventana.ma")
     cmds.file(rename=ruta)
     cmds.file(save=True, type="mayaAscii", force=True)
     antes = _resumen_sesion(v)
     cmds.file(new=True, force=True)
-    _procesar()
-    vacia = _resumen_sesion(v)
-    cmds.file(ruta, open=True, force=True)
-    _procesar()
-    despues = _resumen_sesion(v)
-    return {"antes": antes, "escena_nueva": vacia, "reabierta": despues,
-            "mb": round(os.path.getsize(ruta) / 1e6, 1)}
+    return {"antes": antes, "mb": round(os.path.getsize(ruta) / 1e6, 1)}
+
+
+def reabrir(v):
+    cmds.file(os.path.join(_SALIDA, "prueba_ventana.ma"), open=True, force=True)
+    return {"escena": cmds.file(query=True, sceneName=True)}
 
 
 def ajustes_de_planta(v):
@@ -337,45 +391,104 @@ def ruina(v):
 def recargar_plugin():
     import instalar
     from trepadora import menu
+    from trepadora.ui import ventana
 
-    cmds.unloadPlugin(instalar.PLUGIN + ".py")
-    sin = cmds.menu(menu.MENU, exists=True)
+    datos = {"comando_deshacer": hasattr(cmds, "trepadoraDeshacer")}
+    llamadas = []
+
+    def espiar(modulo, nombre):
+        original = getattr(modulo, nombre)
+
+        def espia(*a, **k):
+            try:
+                resultado = original(*a, **k)
+                llamadas.append([nombre, "ok"])
+                return resultado
+            except Exception:
+                llamadas.append([nombre, traceback.format_exc().strip().splitlines()[-1]])
+                raise
+        setattr(modulo, nombre, espia)
+        return original
+
+    originales = {"borrar": espiar(menu, "borrar"), "cerrar": espiar(ventana, "cerrar")}
+    try:
+        try:
+            cmds.unloadPlugin(instalar.PLUGIN + ".py")
+        except RuntimeError:
+            datos["error_descargar"] = traceback.format_exc().strip().splitlines()[-1]
+        datos["llamadas"] = llamadas
+        datos["cargado_tras_descargar"] = cmds.pluginInfo(instalar.PLUGIN, query=True,
+                                                          loaded=True)
+        datos["menu_tras_descargar"] = cmds.menu(menu.MENU, exists=True)
+    finally:
+        menu.borrar, ventana.cerrar = originales["borrar"], originales["cerrar"]
     cmds.loadPlugin(os.path.join(_RAIZ, "plug-ins", instalar.PLUGIN + ".py"))
-    cmds.evalDeferred("pass")
-    _procesar()
     from trepadora import menu as menu2
 
     menu2.crear()
-    return {"menu_tras_descargar": sin, "menu_tras_cargar": cmds.menu(menu2.MENU, exists=True)}
+    datos["menu_tras_cargar"] = cmds.menu(menu2.MENU, exists=True)
+    datos["comando_tras_cargar"] = hasattr(cmds, "trepadoraDeshacer")
+    return datos
 
 
-def probar():
+def _v():
+    from trepadora.ui import ventana
+
+    if ventana._ventana is None:
+        raise RuntimeError("La ventana no está abierta")
+    return ventana._ventana
+
+
+_RECORDADOS = ("pasos", "semilla", "escala", "longitud_max", "forma_hoja", "tipo_tallo")
+
+
+def _ajustes_al_salir():
+    """Lo que la siguiente vez que se abra Maya debería recordar la ventana."""
+    datos = {c: _v().sesion.ajustes[c] for c in _RECORDADOS}
+    with open(os.path.join(_SALIDA, "ajustes_al_salir.json"), "w", encoding="utf-8") as f:
+        json.dump(datos, f)
+    return datos
+
+
+def _pasos():
+    """Los pasos de la prueba, en orden."""
+    return [
+        ("instalar", instalar_prueba),
+        ("abrir_ventana", lambda: abrir_ventana()[1]),
+        ("escena_sencilla", lambda: escena_sencilla(_v())),
+        ("origen_por_clic", lambda: origen_por_clic(_v())),
+        ("crecer", lambda: crecer(_v())),
+        ("crecer_mas", lambda: crecer_mas(_v())),
+        ("preajuste_colgante", lambda: preajuste(_v(), "Enredadera colgante")),
+        ("preajuste_fachada", lambda: preajuste(_v(), "Hiedra de fachada")),
+        ("crear_malla", lambda: crear_malla(_v())),
+        ("deshacer", lambda: deshacer(_v())),
+        ("guardar_y_nueva", lambda: guardar_y_nueva(_v())),
+        ("escena_nueva", lambda: _resumen_sesion(_v())),
+        ("reabrir", lambda: reabrir(_v())),
+        ("reabierta", lambda: _resumen_sesion(_v())),
+        ("ajustes_de_planta", lambda: ajustes_de_planta(_v())),
+        ("guardar_preajuste", lambda: guardar_preajuste(_v())),
+        ("hoja_propia", lambda: hoja_propia(_v())),
+        ("ruina", lambda: ruina(_v())),
+        ("recargar_plugin", recargar_plugin),
+        ("ajustes_al_salir", _ajustes_al_salir),
+    ]
+
+
+def _datos_generales():
     if not os.path.isdir(_SALIDA):
         os.makedirs(_SALIDA)
     _informe["maya"] = cmds.about(version=True)
     _informe["so"] = cmds.about(operatingSystem=True)
     _informe["app_dir"] = cmds.internalVar(userAppDir=True)
-    _paso("instalar", instalar_prueba)
-    abierta = _paso("abrir_ventana", abrir_ventana)
-    if abierta:
-        v, _informe["pasos"]["abrir_ventana"]["datos"] = abierta
-        _paso("escena_sencilla", escena_sencilla, v)
-        _paso("origen_por_clic", origen_por_clic, v)
-        _paso("crecer", crecer, v)
-        _paso("crecer_mas", crecer_mas, v)
-        _paso("preajuste_colgante", preajuste, v, "Enredadera colgante")
-        _paso("preajuste_fachada", preajuste, v, "Hiedra de fachada")
-        _paso("crear_malla", crear_malla, v)
-        _paso("deshacer", deshacer, v)
-        _paso("guardar_y_reabrir", guardar_y_reabrir, v)
-        from trepadora.ui import ventana
 
-        v = ventana._ventana
-        _paso("ajustes_de_planta", ajustes_de_planta, v)
-        _paso("guardar_preajuste", guardar_preajuste, v)
-        _paso("hoja_propia", hoja_propia, v)
-        _paso("ruina", ruina, v)
-    _paso("recargar_plugin", recargar_plugin)
+
+def probar():
+    """Todos los pasos seguidos, sin dejar a Maya atender lo pendiente entre ellos."""
+    _datos_generales()
+    for nombre, funcion in _pasos():
+        _paso(nombre, funcion)
     return _informe
 
 
@@ -385,20 +498,38 @@ def _escribir(nombre):
 
 
 def probar_y_salir():
-    def hacer():
+    """Cada paso se ejecuta cuando Maya ha atendido lo que dejó pendiente el anterior
+    (avisos de escena nueva, de deshacer...), como cuando un estudiante pulsa botones."""
+    pasos = _pasos()
+
+    def salir():
         try:
-            probar()
+            # Como al salir de Maya normalmente: guarda las preferencias generales (no
+            # las de plug-ins, para comprobar que las guardó el instalador).
+            cmds.savePrefs(general=True)
+        except Exception:
+            _informe["errores"]["salir"] = traceback.format_exc()
+        _escribir("prueba_ventana.json")
+        sys.stdout.flush()
+        os._exit(0)
+
+    def siguiente(i):
+        try:
+            if i >= len(pasos):
+                salir()
+                return
+            _paso(*pasos[i])
+            _escribir("prueba_ventana.json")
         except Exception:
             _informe["errores"]["general"] = traceback.format_exc()
-        finally:
-            _escribir("prueba_ventana.json")
-            sys.stdout.flush()
-            os._exit(0)
+            salir()
+            return
+        cmds.evalDeferred(lambda: siguiente(i + 1), lowestPriority=True)
 
-    if not os.path.isdir(_SALIDA):
-        os.makedirs(_SALIDA)
+    _datos_generales()
     # Cuando Maya haya terminado de arrancar y de dibujar su ventana.
-    cmds.evalDeferred(lambda: cmds.evalDeferred(hacer, lowestPriority=True), lowestPriority=True)
+    cmds.evalDeferred(lambda: cmds.evalDeferred(lambda: siguiente(0), lowestPriority=True),
+                      lowestPriority=True)
 
 
 def comprobar_arranque():
@@ -406,6 +537,7 @@ def comprobar_arranque():
     from trepadora import menu
 
     return {"plugin_cargado": cmds.pluginInfo("trepadora_plugin", query=True, loaded=True),
+            "comando_deshacer": hasattr(cmds, "trepadoraDeshacer"),
             "menu": cmds.menu(menu.MENU, exists=True),
             "estante": cmds.shelfLayout("Trepadora", exists=True),
             "modulo": cmds.moduleInfo(path=True, moduleName="Trepadora")
@@ -417,8 +549,14 @@ def _abrir_y_capturar():
     from trepadora import menu
 
     v = menu.abrir()
-    return {"ajustes_recordados": v.sesion.ajustes["semilla"],
-            "captura": _captura_ventana(v, "6_arranque")}
+    recordados = {c: v.sesion.ajustes[c] for c in _RECORDADOS}
+    ruta = os.path.join(_SALIDA, "ajustes_al_salir.json")
+    esperados = None
+    if os.path.exists(ruta):
+        with open(ruta, encoding="utf-8") as f:
+            esperados = json.load(f)
+    return {"ajustes_recordados": recordados, "ajustes_al_salir": esperados,
+            "coinciden": recordados == esperados, "captura": _captura_ventana(v, "6_arranque")}
 
 
 def comprobar_arranque_y_salir():

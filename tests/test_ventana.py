@@ -69,7 +69,7 @@ class SesionFalsa:
         self.superficies = ["|muro", "|suelo"]
         return self.superficies
 
-    def anadir_origen_en(self, x, y):
+    def anadir_origen_en(self, x, y, panel=None):
         self._origenes.append((x, y))
         return "|trepadora_origenes_grp|trepadora_origen1"
 

@@ -19,7 +19,7 @@ import math
 
 from maya import cmds
 
-from . import geometria
+from . import deshacer, geometria
 from .crecimiento import Crecimiento, Parametros
 from .hojas import ParametrosHojas, colocar_hojas
 from .i18n import t
@@ -118,9 +118,10 @@ def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, paso=N
         if modo == "curvas":
             grupo = crear_vista_previa(crecimiento.curvas())
         else:
-            grupo = crear_planta(crecimiento, paso_escena, hojas or {}, grosor, semilla,
-                                 instancias=instancias, forma_hoja=forma_hoja,
-                                 tipo_tallo=tipo_tallo, hoja_propia=hoja_propia)
+            # Un solo Ctrl+Z quita la planta entera (ver deshacer.py).
+            grupo = deshacer.ejecutar(lambda: crear_planta(
+                crecimiento, paso_escena, hojas or {}, grosor, semilla, instancias=instancias,
+                forma_hoja=forma_hoja, tipo_tallo=tipo_tallo, hoja_propia=hoja_propia))
     finally:
         cmds.undoInfo(closeChunk=True)
 

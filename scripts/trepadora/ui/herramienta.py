@@ -7,10 +7,10 @@ _al_pulsar = None
 
 
 def activar(al_pulsar):
-    """Activa la herramienta: cada clic en el visor llama a ``al_pulsar(x, y)``.
+    """Activa la herramienta: cada clic en el visor llama a ``al_pulsar(x, y, panel)``.
 
     ``x`` e ``y`` son píxeles del visor (origen abajo a la izquierda), los que
-    espera ``M3dView.viewToWorld``.
+    espera ``M3dView.viewToWorld``; ``panel`` es el visor donde se hizo clic.
     """
     global _al_pulsar
     _al_pulsar = al_pulsar
@@ -23,7 +23,15 @@ def activar(al_pulsar):
 def _pulsar(*_):
     x, y, _z = cmds.draggerContext(CONTEXTO, query=True, anchorPoint=True)
     if _al_pulsar is not None:
-        _al_pulsar(x, y)
+        _al_pulsar(x, y, panel_bajo_el_cursor())
+
+
+def panel_bajo_el_cursor():
+    """El visor 3D donde está el ratón, o None si no es un visor."""
+    panel = cmds.getPanel(underPointer=True) or cmds.getPanel(withFocus=True)
+    if panel and cmds.getPanel(typeOf=panel) == "modelPanel":
+        return panel
+    return None
 
 
 def activa():

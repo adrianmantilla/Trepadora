@@ -188,7 +188,7 @@ objetos seleccionados.
 ```
 instalar.py           instalador: se arrastra al visor de Maya
 plug-ins/
-  trepadora_plugin.py plug-in de Maya: crea el menú Trepadora
+  trepadora_plugin.py plug-in de Maya: crea el menú Trepadora y el paso de Ctrl+Z de Crear malla
 icons/trepadora.png   icono del estante
 scripts/trepadora/
   ajustes.py          los ajustes de la ventana, sus rangos y los preajustes (no depende de Maya)
@@ -197,6 +197,7 @@ scripts/trepadora/
   ui/ventana.py       la ventana (PySide6, acoplable)
   ui/herramienta.py   herramienta de clic en el visor para colocar orígenes
   menu.py             menú Trepadora
+  deshacer.py         Ctrl+Z quita de una vez la planta creada (sus mallas se hacen con la API)
   crecimiento.py      algoritmo de crecimiento y grosor (no depende de Maya)
   hojas.py            colocación de hojas
   geometria.py        mallas de tallos, hojas y rabillos en Python puro; tipos de tallo y hoja

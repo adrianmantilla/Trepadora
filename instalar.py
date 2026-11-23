@@ -20,6 +20,7 @@ import io
 import os
 import re
 import sys
+import time
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 NOMBRE_MOD = "trepadora.mod"
@@ -85,6 +86,14 @@ def instalar(carpeta_modulos=None, estante=True, abrir=True, dialogo=True):
     """Instala Trepadora para el usuario actual de Maya. Devuelve un resumen."""
     from maya import cmds, mel
 
+    tiempos = {}
+    inicio = time.time()
+
+    def apuntar(paso):
+        nonlocal inicio
+        tiempos[paso] = round(time.time() - inicio, 2)
+        inicio = time.time()
+
     carpeta_modulos = carpeta_modulos or _carpeta_modulos()
     ruta_mod = escribir_mod(carpeta_modulos)
 
@@ -99,25 +108,41 @@ def instalar(carpeta_modulos=None, estante=True, abrir=True, dialogo=True):
         sys.path.insert(0, scripts)
     from trepadora.i18n import t
 
+    apuntar("modulo")
     plugin = os.path.join(RAIZ, "plug-ins", PLUGIN + ".py")
-    if cmds.pluginInfo(PLUGIN, query=True, loaded=True):
-        cmds.unloadPlugin(PLUGIN + ".py", force=True)
+    _descargar_plugin(cmds)
     cmds.loadPlugin(plugin)
     cmds.pluginInfo(plugin, edit=True, autoload=True)
+    apuntar("plugin")
     if not cmds.about(batch=True):
         from trepadora import menu
 
         menu.crear()
+        apuntar("menu")
         if estante:
             _crear_estante(cmds, mel, t)
+            apuntar("estante")
         if abrir:
             menu.abrir()
+            apuntar("ventana")
     _guardar_preferencias(cmds)
+    apuntar("preferencias")
     if dialogo and not cmds.about(batch=True):
         cmds.confirmDialog(title=t("ventana_titulo"),
                            message=t("instalado", carpeta=RAIZ, mod=ruta_mod),
                            button=[t("boton_aceptar")])
-    return {"mod": ruta_mod, "plugin": plugin, "version": version()}
+    return {"mod": ruta_mod, "plugin": plugin, "version": version(), "segundos": tiempos}
+
+
+def _descargar_plugin(cmds):
+    """Descarga el plug-in si está cargado (para reinstalar o desinstalar).
+
+    Antes vacía el historial de deshacer: puede guardar pasos del plug-in
+    (Crear malla) que ya no se podrían deshacer sin él.
+    """
+    if cmds.pluginInfo(PLUGIN, query=True, loaded=True):
+        cmds.flushUndo()
+        cmds.unloadPlugin(PLUGIN + ".py", force=True)
 
 
 def _guardar_preferencias(cmds):
@@ -127,9 +152,11 @@ def _guardar_preferencias(cmds):
     el cierre justo después de instalar, sin esto Trepadora no se cargaría sola.
     """
     try:
-        cmds.savePrefs(general=True, pluginPrefs=True)
-    except RuntimeError:
-        pass
+        cmds.savePrefs(general=True, plugins=True)
+    except (RuntimeError, TypeError):
+        import traceback
+
+        traceback.print_exc()
 
 
 def ventana_abierta():
@@ -147,7 +174,7 @@ def desinstalar(carpeta_modulos=None):
         ventana.cerrar()
     if cmds.pluginInfo(PLUGIN, query=True, loaded=True):
         cmds.pluginInfo(PLUGIN, edit=True, autoload=False)
-        cmds.unloadPlugin(PLUGIN + ".py", force=True)
+        _descargar_plugin(cmds)
     ruta = os.path.join(carpeta_modulos or _carpeta_modulos(), NOMBRE_MOD)
     if os.path.exists(ruta):
         os.remove(ruta)

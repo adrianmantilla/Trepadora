@@ -50,12 +50,12 @@ def _cajas(nombres):
 superficie_maya.SuperficieMaya = _cajas
 
 
-def _punto(self, x, y):
+def _punto(self, x, y, panel=None):
     # x, y = coordenadas de mundo frente al muro (z grande); fuera de todo -> None
     self._exigir_superficie()
     if y < 0 or abs(x) > 1000:
         return None
-    return _cajas(self.superficies).mas_cercano((x, y, 6.0))[0]
+    return _cajas(self.superficies_validas()).mas_cercano((x, y, 6.0))[0]
 
 
 ses.Sesion.punto_en_superficie = _punto
