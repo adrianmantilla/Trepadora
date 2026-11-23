@@ -219,8 +219,8 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instan
     return grupo
 
 
-# Color de las hojas modelo en el material del visor (el de cada hoja va en
-# sus colores de vértice).
+# Color por defecto de las hojas en Arnold, si a una hoja le faltaran los
+# colores de vértice (el de cada hoja va en ellos).
 _COLOR_HOJAS = (0.16, 0.38, 0.10)
 
 
@@ -268,8 +268,12 @@ def _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal
         for i, modelo in enumerate(datos.modelos):
             transform = _crear_malla("trepadora_hoja_modelo{}".format(i + 1), modelo.malla,
                                      _BRILLO_HOJAS)
-            sombreado = _asignar_material(transform, "trepadora_hojas_inst_mat", _COLOR_HOJAS,
-                                          _BRILLO_HOJAS)
+            # El visor no enseña los colores de vértice de las instancias: cada
+            # tono lleva su propio material, del color de su grupo. Arnold no
+            # lo usa (toma los colores de vértice y el rgbPP de cada hoja).
+            sombreado = _asignar_material(
+                transform, "trepadora_hojas_tono{}_mat".format(modelo.grupo + 1), modelo.color,
+                _BRILLO_HOJAS)
             _material_arnold(transform, sombreado, "trepadora_hojas_inst", _COLOR_HOJAS,
                              _BRILLO_HOJAS, clave="trepadora_hojas", por_instancia=True)
             modelos.append(_largo(cmds.parent(transform, modelos_grp)[0]))
@@ -351,11 +355,23 @@ def _crear_malla(nombre, malla, brillo=1.0):
     colores = om.MColorArray([om.MColor(_a_lineal(c, lineal, brillo) + (1.0,))
                               for c in malla.colores])
     fn.setVertexColors(colores, list(range(len(malla.vertices))))
+    _suavizar(fn)
     transform = om.MFnDagNode(objeto).fullPathName()
     transform = cmds.rename(transform, nombre)
     forma = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
     cmds.setAttr(forma + ".displayColors", 1)
     return transform
+
+
+def _suavizar(fn):
+    """Todas las aristas suaves: la hoja y el tallo se ven curvos, no hechos de caras planas."""
+    try:
+        aristas = fn.numEdges
+        fn.setEdgeSmoothings(list(range(aristas)), [True] * aristas)
+        fn.cleanupEdgeSmoothing()
+        fn.updateSurface()
+    except (AttributeError, RuntimeError, TypeError):
+        pass
 
 
 def _asignar_material(transform, nombre, color, brillo=1.0):
@@ -429,11 +445,17 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
             for atributo, valor in ajustes.items():
                 cmds.setAttr(shader + "." + atributo, valor)
         if cmds.attributeQuery("aiSurfaceShader", node=grupo, exists=True):
-            cmds.connectAttr(shader + ".outColor", grupo + ".aiSurfaceShader", force=True)
+            _conectar(shader + ".outColor", grupo + ".aiSurfaceShader")
         return shader
     except RuntimeError as error:
         cmds.warning(t("sin_arnold", error=error))
         return None
+
+
+def _conectar(origen, destino):
+    """Conecta si no lo estaba ya (varias piezas comparten material: sin avisos repetidos)."""
+    if not cmds.isConnected(origen, destino):
+        cmds.connectAttr(origen, destino, force=True)
 
 
 def _por_instancia(dato, nombre):

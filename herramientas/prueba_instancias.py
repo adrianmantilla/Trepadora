@@ -43,19 +43,47 @@ def _iniciar():
 
 
 def _instancias(cmds):
-    """(número de partículas, matrices de cada instancia, objetos instanciados) del instanciador."""
-    import maya.api.OpenMaya as om
-    import maya.api.OpenMayaFX as omfx
+    """(número de partículas, matrices de cada instancia, objetos instanciados) del instanciador.
+
+    Con la API 1 (maya.OpenMayaFX): la API 2 no trae MFnInstancer en Maya 2027.
+    """
+    import maya.OpenMaya as om1
+    import maya.OpenMayaFX as omfx1
 
     nodos = cmds.ls(type="instancer", long=True)
     if not nodos:
         return 0, [], []
-    lista = om.MSelectionList()
+    lista = om1.MSelectionList()
     lista.add(nodos[0])
-    fn = omfx.MFnInstancer(lista.getDagPath(0))
-    rutas, matrices, _, _ = fn.allInstances()
+    camino = om1.MDagPath()
+    lista.getDagPath(0, camino)
+    fn = omfx1.MFnInstancer(camino)
+    rutas, matrices = om1.MDagPathArray(), om1.MMatrixArray()
+    inicios, indices = om1.MIntArray(), om1.MIntArray()
+    fn.allInstances(rutas, matrices, inicios, indices)
+
+    def valor(m, i, j):
+        try:
+            return m(i, j)
+        except TypeError:
+            return om1.MScriptUtil.getDoubleArrayItem(m[i], j)
+
+    filas = [[valor(matrices[k], i, j) for i in range(4) for j in range(4)]
+             for k in range(matrices.length())]
     objetos = cmds.listConnections(nodos[0] + ".inputHierarchy") or []
-    return fn.particleCount(), [list(m) for m in matrices], objetos
+    return fn.particleCount(), filas, objetos
+
+
+def _tonos_visor(cmds, objetos):
+    """Colores distintos de los materiales del visor de los modelos instanciados."""
+    tonos = set()
+    for objeto in objetos:
+        formas = cmds.listRelatives(objeto, shapes=True, fullPath=True) or []
+        for grupo in cmds.listConnections(formas, type="shadingEngine") or []:
+            for material in cmds.listConnections(grupo + ".surfaceShader") or []:
+                if cmds.attributeQuery("color", node=material, exists=True):
+                    tonos.add(tuple(round(x, 3) for x in cmds.getAttr(material + ".color")[0]))
+    return sorted(tonos)
 
 
 def _particulas(cmds):
@@ -81,6 +109,24 @@ def _error_de_colocacion(cmds, matrices):
         for j in range(3):
             peor = max(peor, abs(m[12 + j] - p[j]) / max(s[1], 1e-9))
     return peor
+
+
+def _aristas_duras(cmds, nodo):
+    """(aristas duras, aristas) de una malla: con todas suaves, 0."""
+    import maya.api.OpenMaya as om
+
+    lista = om.MSelectionList()
+    lista.add(nodo)
+    fn = om.MFnMesh(lista.getDagPath(0))
+    return [sum(1 for i in range(fn.numEdges) if not fn.isEdgeSmooth(i)), fn.numEdges]
+
+
+def _seguro(funcion, *args):
+    """El resultado, o el error como texto: una medida que falla no para la prueba."""
+    try:
+        return funcion(*args)
+    except Exception as error:  # noqa: BLE001
+        return "ERROR: {}".format(error)
 
 
 def _caja(cmds, nodo):
@@ -133,7 +179,11 @@ def probar(carpeta):
     informe["instancias"] = dict(particulas=particulas, instancias=len(matrices),
                                  modelos=len(objetos),
                                  error_colocacion=_error_de_colocacion(cmds, matrices),
-                                 caja=_caja(cmds, cmds.ls(type="instancer")[0]))
+                                 caja=_caja(cmds, cmds.ls(type="instancer")[0]),
+                                 tonos_visor=_seguro(_tonos_visor, cmds, objetos),
+                                 aristas_duras_modelo=_seguro(_aristas_duras, cmds, objetos[0]),
+                                 aristas_duras_tallos=_seguro(_aristas_duras, cmds,
+                                                              "trepadora_tallos"))
     forma, _, _, _, rgb = _particulas(cmds)
     informe["instancias"]["rgbPP_min_max"] = [
         [round(min(c[k] for c in rgb), 3) for k in range(3)],

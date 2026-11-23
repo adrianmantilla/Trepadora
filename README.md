@@ -50,9 +50,11 @@ No necesita instalar nada: funciona con el Python que trae Maya (no usa NumPy).
 | `tipo_tallo` | `"lenoso"` | `"lenoso"` (marrón, puntas verdes), `"nudoso"` (más grueso, con corteza arrugada), `"verde"` (fino y verde) o `"rojizo"` (como la parra virgen) |
 | `hoja_propia` | ninguna | Nombre de una malla de tu escena que se usa como hoja (siempre con instancias). Modélala con la base en el origen, la punta hacia +Y y la cara hacia +Z; el tamaño se ajusta solo y conserva su material |
 
-Con instancias, el visor enseña cada hoja con el tono de su hoja modelo (seis tonos de
-verde y bronce); en el render de Arnold cada hoja sale con su propio color, porque cada
-instancia lleva en `rgbPP` cuánto se aparta del tono de su modelo. Las hojas modelo quedan
+Con instancias, el visor enseña cada hoja con el tono de su hoja modelo: seis tonos, cada
+uno con su material de visor (`trepadora_hojas_tono1_mat` a `trepadora_hojas_tono6_mat`),
+porque el visor no pinta los colores de vértice de las instancias. En el render de Arnold
+cada hoja sale con su propio color, porque cada instancia lleva en `rgbPP` cuánto se aparta
+del tono de su modelo. Las hojas modelo quedan
 ocultas en el grupo `trepadora_hojas_modelos`, y las partículas que marcan dónde va cada
 hoja, en `trepadora_hojas_puntos` (también ocultas).
 
