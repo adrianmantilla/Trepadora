@@ -2,15 +2,19 @@
 
 Dibuja en el espacio UV de cada forma de hoja (ver ``geometria.ESCALA_UV`` y
 ``geometria.uv_hoja``) sus nervios principales, los secundarios y una red fina
-de nervillos, y de ahí saca los mapas de ``trepadora.texturas.MAPAS``. La
-corteza es una textura que se repite sin costuras (ruido filtrado con la
-transformada de Fourier, que es periódico por construcción), con surcos a lo
-largo del tallo.
+de nervillos, y de ahí saca los mapas de ``trepadora.texturas.MAPAS``.
+
+La corteza del plugin sale de Substance 3D Painter
+(``herramientas/painter/corteza_painter.py``), así que este script no la toca
+salvo con ``--con-corteza``: entonces dibuja una corteza procedural que se
+repite sin costuras (ruido filtrado con la transformada de Fourier, que es
+periódico por construcción), con surcos a lo largo del tallo. Sirve para
+quien no tenga Painter.
 
 Se dibuja a 4K y se reduce al resto de resoluciones. Necesita NumPy y Pillow
 (no Maya). Desde la raíz del repositorio:
 
-    python herramientas/texturas/generar_texturas.py [carpeta] [--solo 512,1k]
+    python herramientas/texturas/generar_texturas.py [carpeta] [--solo 512,1k] [--con-corteza]
 
 Por defecto escribe en ``texturas/``.
 """
@@ -379,14 +383,15 @@ def main(argv=None):
     p.add_argument("salida", nargs="?", default=os.path.join(REPO, "texturas"))
     p.add_argument("--solo", default="", help="resoluciones separadas por comas (512,1k...)")
     p.add_argument("--formas", default=",".join(geometria.FORMAS_HOJA))
-    p.add_argument("--sin-corteza", action="store_true")
+    p.add_argument("--con-corteza", action="store_true",
+                   help="dibuja también la corteza procedural (sustituye a la de Painter)")
     p.add_argument("--lado", type=int, default=N, help="resolución de trabajo (4096)")
     a = p.parse_args(argv)
     N = a.lado
     solo = [s for s in a.solo.split(",") if s]
     for forma in [f for f in a.formas.split(",") if f]:
         textura_hoja(forma, a.salida, solo)
-    if not a.sin_corteza:
+    if a.con_corteza:
         textura_corteza(a.salida, solo)
 
 
