@@ -32,6 +32,11 @@ No necesita instalar nada: funciona con el Python que trae Maya (no usa NumPy).
    Sin localizadores, la planta nace en la base del primer objeto seleccionado.
    Pulsa **Esc** para detener el crecimiento; todo se deshace con un solo **Ctrl+Z**.
 
+4. Para renderizar con Arnold, carga Arnold (MtoA) **antes** de hacer crecer la planta. Así
+   cada pieza lleva además un material de Arnold que toma el color de cada hoja; las hojas
+   dejan pasar algo de luz y a contraluz brillan. Si Arnold no está cargado, la planta solo
+   lleva el material del visor y en el render todas las hojas salen del mismo verde.
+
 ### Ajustes del crecimiento
 
 Se pasan por nombre, por ejemplo `tp.ejecutar(semilla=4, gravedad=1.0, prob_rama=0.08)`.
@@ -101,6 +106,7 @@ scripts/trepadora/
   i18n/               textos por idioma (es.json); la interfaz se puede traducir
 herramientas/
   capturas_maya.py    genera las capturas de comparación en Maya
+  render_arnold.py    render de prueba de la ruina con Arnold, con cielo y sol (mayapy)
   diagnostico.py      cifras del crecimiento de la ruina, iguales dentro y fuera de Maya
 tests/                pruebas sin Maya, con una escena simulada
 ```

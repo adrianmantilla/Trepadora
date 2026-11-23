@@ -4,5 +4,6 @@
   "progreso_estado": "Creciendo... paso {paso} de {total} (Esc para detener)",
   "resumen": "Trepadora: {ramas} ramas y {puntos} puntos en {pasos} pasos (semilla {semilla}).",
   "limite": "Trepadora: se alcanzó el límite de seguridad de {limite} puntos. Baja los pasos o la probabilidad de rama.",
-  "cancelado": "Trepadora: crecimiento detenido. Se conserva lo generado hasta ahora."
+  "cancelado": "Trepadora: crecimiento detenido. Se conserva lo generado hasta ahora.",
+  "sin_arnold": "Trepadora: no se pudo crear el material de Arnold ({error}). En el render, las hojas saldrán todas del mismo verde."
 }

@@ -311,6 +311,19 @@ class PruebasRuina(unittest.TestCase):
         self.assertLess(arriba, 0.005 * en_pared)
         self.assertLess(aletas, 0.015 * en_pared)
 
+    def test_hojas_bronce_sueltas_entre_las_verdes(self):
+        # Alrededor de una de cada cien hojas tira a bronce, sueltas entre las
+        # verdes: una mancha marrón entera llama la atención como un fallo.
+        hojas = self.hojas()
+        bronce = [h for h in hojas if h.tinte > 0.0]
+        self.assertGreater(len(bronce), 0.004 * len(hojas))
+        self.assertLess(len(bronce), 0.025 * len(hojas))
+        proporcion = 0.0
+        for h in bronce:
+            cerca = [o for o in hojas if o is not h and v.distancia(o.base, h.base) < 10.0]
+            proporcion += sum(1 for o in cerca if o.tinte > 0.0) / float(max(1, len(cerca)))
+        self.assertLess(proporcion / len(bronce), 0.12)
+
     def test_hojas_mayores_cerca_de_la_raiz(self):
         # La planta no es una alfombra uniforme: las hojas adultas de la parte
         # vieja, cerca de la raíz, son mayores que las del crecimiento nuevo.

@@ -102,7 +102,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         # por manchas (más amarillento aquí, más azulado allá) y no a sal y
         # pimienta.
         tono_rama = rng.random()
-        escala_gen = (1.12, 1.0, 0.86, 0.76, 0.7)[min(rama.generacion, 4)]
+        escala_gen = _ESCALA_GEN[min(rama.generacion, 4)]
         colgante = getattr(rama, "colgante", False)
         frente = _frente_colgante(crecimiento, rama) if colgante else None
         # Las ramillas son cortas: sus hojas maduran antes. Las de los tallos
@@ -245,8 +245,8 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             if (p.bronce > 0.0 and edad > 0.85 and bajo < 0.3 and not colgante
                     and not encima):
                 rodal = _ruido(punto, escala_manchas * 0.5, p.semilla + 57)
-                if rng.random() < p.bronce * 200.0 * max(0.0, rodal - 0.62):
-                    tinte = rng.uniform(0.5, 0.85)
+                if rng.random() < p.bronce * min(_BRONCE_MAX, _K_BRONCE * max(0.0, rodal - _BRONCE_UMBRAL)):
+                    tinte = rng.uniform(0.35, 0.85)
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
                               tamano=tamano, edad=edad, lobulado=lobulado,
                               tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.14))),
@@ -328,6 +328,15 @@ _K_DEG_TAMANO = 0.6
 _K_CLARO_LEJOS = 0.2
 # Rabillos más largos en las matas (bulto) que en los claros.
 _K_RABILLO = 3.0
+# Rodales de bronce: salen donde el ruido pasa de _BRONCE_UMBRAL y, dentro de
+# un rodal, tiran a bronce como mucho _BRONCE_MAX veces la proporción pedida
+# (con bronce 0.015, una hoja de cada ocho). Así quedan sueltas entre las
+# verdes y no en una mancha marrón.
+_BRONCE_UMBRAL = 0.5
+_K_BRONCE = 200.0
+_BRONCE_MAX = 8.0
+# Tamaño de las hojas según la generación de la rama (tronco, rama, ramilla...).
+_ESCALA_GEN = (1.12, 1.0, 0.86, 0.76, 0.7)
 # Lo más que apunta hacia arriba una hoja en una pared (seno del ángulo con
 # la horizontal): unos 17 grados.
 _SUBIDA_MAX = 0.3

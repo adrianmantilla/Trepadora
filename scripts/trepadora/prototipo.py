@@ -166,7 +166,8 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1):
             continue
         brillo = 1.0 if nombre == "trepadora_tallos" else _BRILLO_HOJAS
         transform = _crear_malla(nombre, malla, brillo)
-        _asignar_material(transform, nombre + "_mat", color, brillo)
+        sombreado = _asignar_material(transform, nombre + "_mat", color, brillo)
+        _material_arnold(transform, sombreado, nombre, color, brillo)
         cmds.parent(transform, grupo)
     print("Trepadora: {} hojas.".format(len(hojas)))
     return grupo
@@ -200,6 +201,60 @@ def _asignar_material(transform, nombre, color, brillo=1.0):
         grupo = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=nombre + "SG")
         cmds.connectAttr(material + ".outColor", grupo + ".surfaceShader", force=True)
     cmds.sets(transform, edit=True, forceElement=grupo)
+    return grupo
+
+
+# Ajustes del aiStandardSurface de cada pieza. Las hojas son finas: con
+# thinWalled, «subsurface» es la luz que las atraviesa (a contraluz brillan).
+_ARNOLD = {
+    "trepadora_tallos": {"specular": 0.15, "specularRoughness": 0.6},
+    "trepadora_hojas": {"specular": 0.45, "specularRoughness": 0.35, "thinWalled": 1,
+                        "subsurface": 0.3},
+    "trepadora_rabillos": {"specular": 0.25, "specularRoughness": 0.45},
+}
+
+
+def _arnold_cargado():
+    try:
+        return bool(cmds.pluginInfo("mtoa", query=True, loaded=True))
+    except RuntimeError:
+        return False
+
+
+def _material_arnold(transform, grupo, nombre, color, brillo=1.0):
+    """Material de Arnold para la pieza, si Arnold (MtoA) está cargado.
+
+    El lambert del grupo de sombreado queda para el visor; Arnold usa en su
+    lugar un aiStandardSurface (conectado a aiSurfaceShader) que toma el color
+    de cada hoja de los colores de vértice. Sin esto, en el render todas las
+    hojas saldrían del mismo verde.
+    """
+    if not _arnold_cargado():
+        return None
+    forma = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
+    try:
+        if cmds.attributeQuery("aiExportColors", node=forma, exists=True):
+            cmds.setAttr(forma + ".aiExportColors", 1)
+        conjunto = (cmds.polyColorSet(forma, query=True, currentColorSet=True) or ["colorSet1"])[0]
+        shader = nombre + "_ai"
+        if not cmds.objExists(shader):
+            shader = cmds.shadingNode("aiStandardSurface", asShader=True, name=shader)
+            dato = cmds.shadingNode("aiUserDataColor", asUtility=True, name=nombre + "_color_ai")
+            cmds.setAttr(dato + ".attribute", conjunto, type="string")
+            cmds.setAttr(dato + ".default", *_a_lineal(color, _con_gestion_de_color(), brillo),
+                         type="double3")
+            cmds.connectAttr(dato + ".outColor", shader + ".baseColor", force=True)
+            ajustes = _ARNOLD.get(nombre, {})
+            if ajustes.get("subsurface"):
+                cmds.connectAttr(dato + ".outColor", shader + ".subsurfaceColor", force=True)
+            for atributo, valor in ajustes.items():
+                cmds.setAttr(shader + "." + atributo, valor)
+        if cmds.attributeQuery("aiSurfaceShader", node=grupo, exists=True):
+            cmds.connectAttr(shader + ".outColor", grupo + ".aiSurfaceShader", force=True)
+        return shader
+    except RuntimeError as error:
+        cmds.warning(t("sin_arnold", error=error))
+        return None
 
 
 def _con_gestion_de_color():
