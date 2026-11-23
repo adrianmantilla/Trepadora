@@ -198,7 +198,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                 continue
 
             # La cara mira hacia fuera y a la luz, con giro al azar.
-            cara = v.suma(normal_sup, v.escala(_aleatorio(rng), 0.55))
+            cara = v.suma(normal_sup, v.escala(_aleatorio(rng), 0.7))
             cara = v.suma(cara, v.escala(v.ARRIBA, 0.25))
             cara = v.unitario(v.tangente(cara, adelante))
             if cara is None:

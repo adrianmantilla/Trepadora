@@ -214,10 +214,10 @@ def _asignar_material(transform, nombre, color, brillo=1.0):
 _ARNOLD = {
     "trepadora_tallos": {"base": 1.0, "specular": 0.15, "specularRoughness": 0.6},
     "trepadora_hojas": {"base": 1.0, "specular": 0.5, "specularRoughness": 0.32,
-                        "thinWalled": 1, "subsurface": 0.25},
+                        "thinWalled": 1, "subsurface": 0.3},
     "trepadora_rabillos": {"base": 1.0, "specular": 0.25, "specularRoughness": 0.45},
 }
-_TRASLUCIDO = (2.6, 3.0, 1.2)
+_TRASLUCIDO = (4.0, 4.5, 1.5)
 
 
 def _arnold_cargado():

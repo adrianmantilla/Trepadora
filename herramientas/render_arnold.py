@@ -30,21 +30,26 @@ ANCHO, ALTO = 1280, 720
 # Cielo azulado y sol cálido, desde la misma dirección que la luz de las
 # capturas del visor.
 CIELO = dict(color=(0.75, 0.85, 1.0), intensidad=1.0)
-# Degradado del cielo (posición de abajo a arriba, color lineal): tierra bajo
-# el horizonte, bruma clara y cálida en el horizonte y azul más hondo arriba.
+# Degradado del cielo (posición de abajo a arriba, color lineal): bruma clara
+# y cálida en el horizonte y azul más hondo arriba. Bajo el horizonte, la misma
+# bruma algo más apagada: el suelo se agranda hasta el horizonte (AMPLIAR_SUELO)
+# y lo que asoma por debajo, lejos, se lee como neblina y no como un muro.
 # Si no se puede montar, queda el color liso de CIELO.
-DEGRADADO = ((0.0, (0.30, 0.28, 0.25)), (0.48, (0.45, 0.42, 0.38)),
-             (0.5, (1.0, 0.96, 0.88)), (0.6, (0.78, 0.86, 1.0)),
-             (1.0, (0.38, 0.56, 0.95)))
+DEGRADADO = ((0.0, (0.62, 0.64, 0.66)), (0.5, (1.0, 0.96, 0.88)),
+             (0.6, (0.78, 0.86, 1.0)), (1.0, (0.38, 0.56, 0.95)))
+AMPLIAR_SUELO = 25.0
 SOL = dict(color=(1.0, 0.92, 0.8), intensidad=2.5, giro=(-50, -35, 0), angulo=2.0)
 # Vistas propias del render. «contraluz» mira la ventana con el sol bajo detrás
 # del muro: se ve la luz que atraviesa las hojas que cuelgan en el hueco.
-CONTRALUZ = dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40, sol=(-28, 160, 0))
+# El sol, más fuerte: a contraluz es lo que hace brillar las hojas.
+CONTRALUZ = dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40, sol=(-28, 160, 0),
+                 intensidad_sol=4.0)
 PIEDRA = (0.55, 0.52, 0.47)
 # Manchas de la piedra: ruido en el espacio de la escena (rasgos de unas 15
 # unidades), entre un tono más oscuro y otro más claro que PIEDRA. El relieve,
-# de otro ruido más fino (rasgos de unas 2 o 3 unidades).
-DESGASTE = dict(escala=0.07, oscuro=0.7, claro=1.15, escala_relieve=0.4, relieve=0.8)
+# de otro ruido más fino y con más octavas, para que no salga un grano
+# uniforme como de gotelé.
+DESGASTE = dict(escala=0.07, oscuro=0.7, claro=1.15, escala_relieve=0.15, relieve=0.4)
 SUELO = (0.32, 0.31, 0.28)
 # En el suelo, manchas más pequeñas: grandes, se leen como nubes.
 DESGASTE_SUELO = dict(DESGASTE, escala=0.14)
@@ -97,7 +102,7 @@ def _desgaste(cmds, nombre, shader, color, desgaste):
         manchas = _ruido(cmds, nombre + "_manchas", desgaste["escala"], oscuro, claro)
         cmds.connectAttr(manchas + ".outColor", shader + ".baseColor", force=True)
         granos = _ruido(cmds, nombre + "_granos", desgaste["escala_relieve"],
-                        (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), octavas=3)
+                        (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), octavas=6)
         relieve = cmds.shadingNode("bump2d", asUtility=True, name=nombre + "_relieve")
         cmds.setAttr(relieve + ".bumpDepth", desgaste["relieve"])
         cmds.connectAttr(granos + ".outColorR", relieve + ".bumpValue", force=True)
@@ -174,6 +179,9 @@ def preparar(cmds, semilla=1):
     for nodo in cmds.ls("prueba_*", type="transform"):
         if cmds.listRelatives(nodo, shapes=True, type="mesh"):
             cmds.sets(nodo, edit=True, forceElement=suelo if nodo == "prueba_suelo" else piedra)
+    if cmds.objExists("prueba_suelo"):
+        # La planta ya ha crecido: agrandar el suelo solo cambia el fondo.
+        cmds.scale(AMPLIAR_SUELO, 1, AMPLIAR_SUELO, "prueba_suelo", relative=True)
     sol = _luces(cmds)
     _ajustes(cmds)
     return segundos, sol
@@ -206,11 +214,13 @@ def renderizar(carpeta, prefijo, vistas=("general",), semilla=1):
         os.makedirs(carpeta)
     informe = ["MtoA {}".format(cmds.pluginInfo("mtoa", query=True, version=True))]
     segundos, sol = preparar(cmds, semilla)
+    forma_sol = cmds.listRelatives(sol, shapes=True)[0]
     informe.append("crecimiento y mallas: {:.2f} s".format(segundos))
     todas = dict(capturas_maya.VISTAS_RUINA, contraluz=CONTRALUZ)
     for nombre in vistas:
         vista = todas[nombre]
         cmds.setAttr(sol + ".rotate", *vista.get("sol", SOL["giro"]), type="double3")
+        cmds.setAttr(forma_sol + ".intensity", vista.get("intensidad_sol", SOL["intensidad"]))
         camara = _camara(cmds, vista)
         base = os.path.join(carpeta, "{}_arnold_{}".format(prefijo, nombre))
         cmds.setAttr("defaultRenderGlobals.imageFilePrefix", base, type="string")
