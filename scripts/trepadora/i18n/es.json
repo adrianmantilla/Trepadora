@@ -15,7 +15,7 @@
   "boton_cancelar": "Cancelar",
   "boton_aceptar": "Aceptar",
   "instalado": "Trepadora está instalada.\n\nLa encontrarás en el menú Trepadora y en el estante Trepadora, y se cargará sola cada vez que abras Maya.\n\nCarpeta: {carpeta}\nMódulo: {mod}",
-  "instalado_sin_plugin": "Trepadora está instalada, pero Maya no ha podido cargar su plug-in.\n\nLa ventana y el estante funcionan. Lo que falla sin el plug-in: el menú Trepadora no aparecerá al abrir Maya otra vez, y Ctrl+Z no quitará de una vez la planta creada con Crear malla.\n\nEl motivo está en el Script Editor (Windows > General Editors > Script Editor).\n\nCarpeta: {carpeta}\nMódulo: {mod}",
+  "instalado_sin_plugin": "Trepadora está instalada, pero Maya no ha podido cargar su plug-in.\n\nLa ventana y el estante funcionan. Lo que falla sin el plug-in: el menú Trepadora no aparecerá al abrir Maya otra vez, y Ctrl+Z no quitará de una vez la planta creada con Crear malla.\n\nSi Maya te avisó de que el plug-in viene de una carpeta que no es de confianza («Untrusted Plugin Loading») y pulsaste Deny, arrastra otra vez instalar.py y pulsa Allow. Si no, el motivo está en el Script Editor (Windows > General Editors > Script Editor).\n\nCarpeta: {carpeta}\nMódulo: {mod}",
   "aviso_plugin_no_cargado": "Trepadora: Maya no ha podido cargar el plug-in {ruta}. Mira los mensajes de arriba en el Script Editor.",
   "ayuda_estante": "Abre la ventana de Trepadora",
   "paso_superficie": "1  Superficie",

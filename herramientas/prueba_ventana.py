@@ -10,6 +10,11 @@ tocar las tuyas (estante, plug-ins cargados...)::
     MAYA_APP_DIR=/ruta/maya_prueba TREPADORA_RAIZ=/ruta/Trepadora TREPADORA_SALIDA=/ruta/salida \\
         maya -command "python(\\"exec(open('/ruta/Trepadora/herramientas/prueba_ventana.py').read()); probar_y_salir()\\")"
 
+Con MAYA_APP_DIR instala soltando ``instalar.py`` sobre el visor, como un
+estudiante (``TREPADORA_SOLTAR=0`` para importarlo sin más). Apunta además
+cada ventana que abre Maya, como el aviso de seguridad de Maya 2027 al cargar
+el plug-in, y los ajustes y registros de seguridad.
+
 Después, con la misma MAYA_APP_DIR, ``comprobar_arranque_y_salir()`` mira si
 al abrir Maya otra vez el plug-in se carga solo y aparecen el menú y el estante.
 """
@@ -35,6 +40,7 @@ _informe = {"pasos": {}, "errores": {}}
 def _paso(nombre, funcion, *args, **kwargs):
     """Ejecuta un paso; apunta su resultado o el error y sigue."""
     inicio = time.time()
+    _informe["paso_actual"] = nombre
     try:
         resultado = funcion(*args, **kwargs)
         _informe["pasos"][nombre] = {"ok": True, "segundos": round(time.time() - inicio, 2),
@@ -99,28 +105,150 @@ def _curvas_vista_previa(v):
     return len(cmds.listRelatives(grupo, children=True) or [])
 
 
+def _seguridad():
+    """Ajustes de seguridad de Maya 2027 y lo que dicen sus registros de Trepadora."""
+    variables = {}
+    for nombre in cmds.optionVar(list=True) or []:
+        if any(c in nombre.lower() for c in ("secur", "trust", "safe")):
+            try:
+                variables[nombre] = cmds.optionVar(query=nombre)
+            except Exception:
+                variables[nombre] = "?"
+    registros = {}
+    raiz = os.environ.get("MAYA_APP_DIR", "")
+    for carpeta, _, archivos in os.walk(raiz) if raiz else ():
+        for nombre in archivos:
+            if "secur" not in nombre.lower():
+                continue
+            ruta = os.path.join(carpeta, nombre)
+            try:
+                with open(ruta, encoding="utf-8", errors="replace") as f:
+                    lineas = [x.strip()[:300] for x in f if "trepadora" in x.lower()]
+            except OSError:
+                lineas = ["(no se pudo leer)"]
+            registros[os.path.relpath(ruta, raiz)] = lineas[-20:]
+    return {"optionVars": variables, "registros": registros}
+
+
+_vistos = set()
+_inicio = time.time()
+_vigia = None
+
+
+def _vigilar():
+    """Apunta cada ventana nueva que abre Maya (avisos de seguridad, errores...).
+
+    Sigue funcionando mientras Maya espera en un diálogo.
+    """
+    from PySide6 import QtWidgets
+
+    try:
+        principal = cmds.about(application=True)
+    except Exception:
+        principal = ""
+    for w in QtWidgets.QApplication.topLevelWidgets():
+        titulo = w.windowTitle()
+        if not w.isVisible() or not titulo or titulo.startswith("Autodesk Maya") \
+                or principal and titulo.startswith(principal):
+            continue
+        clave = (type(w).__name__, titulo, w.objectName())
+        if clave in _vistos:
+            continue
+        _vistos.add(clave)
+        _informe.setdefault("dialogos", []).append({
+            "t": round(time.time() - _inicio, 1), "paso": _informe.get("paso_actual"),
+            "clase": clave[0], "titulo": titulo, "nombre": clave[2],
+            "textos": [x.text()[:600] for x in w.findChildren(QtWidgets.QLabel) if x.text()][:12],
+            "botones": [x.text() for x in w.findChildren(QtWidgets.QAbstractButton)
+                        if x.text()][:12]})
+
+
+def _empezar_vigia():
+    global _vigia
+    from PySide6 import QtCore
+
+    _vigia = QtCore.QTimer()
+    _vigia.timeout.connect(_vigilar)
+    _vigia.start(500)
+
+
 # ------------------------------------------------------------------- pasos
+def _soltar_instalador():
+    """Instala como un estudiante: suelta ``instalar.py`` sobre el visor.
+
+    Lo hace la misma función de Maya que atiende el arrastrar y soltar. El
+    diálogo final del instalador se apunta en vez de mostrarse (esperaría a
+    que alguien pulse Aceptar). Devuelve lo que se pudo saber, o None si esta
+    Maya no tiene esa función.
+    """
+    try:
+        from maya.app.general import executeDroppedPythonFile as soltar
+    except ImportError:
+        return None
+    dialogos = []
+    original = cmds.confirmDialog
+
+    def dialogo(*_a, **k):
+        dialogos.append({"titulo": k.get("title"), "mensaje": k.get("message")})
+        return k.get("button", [""])[0] if isinstance(k.get("button"), list) else ""
+
+    import maya.api.OpenMaya as om
+
+    mensajes = []
+    escucha = om.MCommandMessage.addCommandOutputCallback(
+        lambda texto, tipo, *_: mensajes.append(texto.strip()[:400]) if texto.strip() else None)
+    sys.modules.pop("instalar", None)  # que lo cargue Maya, no el que ya importó esta prueba
+    cmds.confirmDialog = dialogo
+    try:
+        soltar.executeDroppedPythonFile(os.path.join(_RAIZ, "instalar.py"), "")
+    finally:
+        cmds.confirmDialog = original
+        om.MMessage.removeCallback(escucha)
+    return {"como": "soltado", "dialogos": dialogos, "mensajes": mensajes[-30:]}
+
+
 def instalar_prueba():
+    # Con una carpeta de preferencias aparte (MAYA_APP_DIR), en su carpeta de módulos,
+    # soltando instalar.py como un estudiante; si no, en la carpeta de salida, para no
+    # tocar nada.
+    datos = None
+    if os.environ.get("MAYA_APP_DIR") and os.environ.get("TREPADORA_SOLTAR", "1") != "0":
+        try:
+            datos = _soltar_instalador()
+        except Exception:
+            _informe["errores"]["soltar_instalador"] = traceback.format_exc()
     import instalar
 
-    # Con una carpeta de preferencias aparte (MAYA_APP_DIR), en su carpeta de módulos, como
-    # haría el instalador de verdad; si no, en la carpeta de salida, para no tocar nada.
-    modulos = None if os.environ.get("MAYA_APP_DIR") else os.path.join(_SALIDA, "modules")
-    datos = instalar.instalar(carpeta_modulos=modulos, estante=True, abrir=False, dialogo=False)
+    if datos is None:
+        modulos = None if os.environ.get("MAYA_APP_DIR") else os.path.join(_SALIDA, "modules")
+        datos = instalar.instalar(carpeta_modulos=modulos, estante=True, abrir=False,
+                                  dialogo=False)
+        datos["como"] = "importado"
+    else:
+        datos["mod"] = os.path.join(instalar._carpeta_modulos(), instalar.NOMBRE_MOD)
     from trepadora import menu
 
     items = cmds.menu(menu.MENU, query=True, itemArray=True) or []
     datos.update(
         plugin_cargado=cmds.pluginInfo(instalar.PLUGIN, query=True, loaded=True),
         autoload=cmds.pluginInfo(instalar.PLUGIN, query=True, autoload=True),
+        comando_deshacer=_hay_comando_deshacer(),
         menu=cmds.menu(menu.MENU, exists=True),
         menu_items=[cmds.menuItem(i, query=True, label=True) for i in items
                     if not cmds.menuItem(i, query=True, divider=True)],
         estante=cmds.shelfLayout(instalar.ESTANTE, exists=True),
         botones_estante=len(cmds.shelfLayout(instalar.ESTANTE, query=True, childArray=True)
                             or []) if cmds.shelfLayout(instalar.ESTANTE, exists=True) else 0,
-        contenido_mod=open(datos["mod"], encoding="utf-8").read())
+        contenido_mod=open(datos["mod"], encoding="utf-8").read()
+        if os.path.exists(datos["mod"]) else None,
+        seguridad=_seguridad())
     return datos
+
+
+def _hay_comando_deshacer():
+    from maya import mel
+
+    return bool(mel.eval('exists "trepadoraDeshacer"'))
 
 
 def abrir_ventana():
@@ -393,7 +521,7 @@ def recargar_plugin():
     from trepadora import menu
     from trepadora.ui import ventana
 
-    datos = {"comando_deshacer": hasattr(cmds, "trepadoraDeshacer")}
+    datos = {"comando_deshacer": _hay_comando_deshacer()}
     llamadas = []
 
     def espiar(modulo, nombre):
@@ -427,7 +555,7 @@ def recargar_plugin():
 
     menu2.crear()
     datos["menu_tras_cargar"] = cmds.menu(menu2.MENU, exists=True)
-    datos["comando_tras_cargar"] = hasattr(cmds, "trepadoraDeshacer")
+    datos["comando_tras_cargar"] = _hay_comando_deshacer()
     return datos
 
 
@@ -519,6 +647,7 @@ def probar_y_salir():
             # Como al salir de Maya normalmente: guarda las preferencias generales (no
             # las de plug-ins, para comprobar que las guardó el instalador).
             cmds.savePrefs(general=True)
+            _informe["seguridad_al_salir"] = _seguridad()
         except Exception:
             _informe["errores"]["salir"] = traceback.format_exc()
         _escribir("prueba_ventana.json")
@@ -539,6 +668,7 @@ def probar_y_salir():
         cmds.evalDeferred(lambda: _como_un_clic(lambda: siguiente(i + 1)), lowestPriority=True)
 
     _datos_generales()
+    _empezar_vigia()
     # Cuando Maya haya terminado de arrancar y de dibujar su ventana.
     cmds.evalDeferred(lambda: cmds.evalDeferred(lambda: _como_un_clic(lambda: siguiente(0)),
                                                 lowestPriority=True),
@@ -550,11 +680,12 @@ def comprobar_arranque():
     from trepadora import menu
 
     return {"plugin_cargado": cmds.pluginInfo("trepadora_plugin", query=True, loaded=True),
-            "comando_deshacer": hasattr(cmds, "trepadoraDeshacer"),
+            "comando_deshacer": _hay_comando_deshacer(),
             "menu": cmds.menu(menu.MENU, exists=True),
             "estante": cmds.shelfLayout("Trepadora", exists=True),
             "modulo": cmds.moduleInfo(path=True, moduleName="Trepadora")
             if "Trepadora" in (cmds.moduleInfo(listModules=True) or []) else None,
+            "seguridad": _seguridad(),
             "ventana": _abrir_y_capturar()}
 
 
@@ -574,14 +705,17 @@ def _abrir_y_capturar():
 
 def comprobar_arranque_y_salir():
     def hacer():
+        _informe["paso_actual"] = "arranque"
         try:
             _informe["arranque"] = comprobar_arranque()
         except Exception:
             _informe["errores"]["arranque"] = traceback.format_exc()
         finally:
+            _vigilar()
             _escribir("prueba_arranque.json")
             sys.stdout.flush()
             os._exit(0)
 
+    _empezar_vigia()
     # Después de que el plug-in haya creado el menú (también va diferido).
     cmds.evalDeferred(lambda: cmds.evalDeferred(hacer, lowestPriority=True), lowestPriority=True)

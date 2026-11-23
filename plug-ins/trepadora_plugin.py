@@ -15,10 +15,6 @@ import traceback
 import maya.api.OpenMaya as om
 from maya import cmds
 
-_SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
-if os.path.isdir(_SCRIPTS) and _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
 COMANDO_DESHACER = "trepadoraDeshacer"
 
 
@@ -65,7 +61,22 @@ class _PasoDeshacer(om.MPxCommand):
             om.MGlobal.displayWarning("Trepadora: " + traceback.format_exc().strip().splitlines()[-1])
 
 
+def _anadir_scripts(objeto):
+    """Pone la carpeta ``scripts`` en sys.path (sin el .mod, al cargarlo a mano).
+
+    Maya 2027 ejecuta este archivo sin ``__file__``: la carpeta se pide a Maya,
+    que sabe de dónde cargó el plug-in (``.../Trepadora/plug-ins``).
+    """
+    plug_ins = os.path.normpath(om.MFnPlugin(objeto).loadPath())
+    if os.path.isfile(plug_ins):
+        plug_ins = os.path.dirname(plug_ins)
+    scripts = os.path.join(os.path.dirname(plug_ins), "scripts")
+    if os.path.isdir(scripts) and scripts not in sys.path:
+        sys.path.insert(0, scripts)
+
+
 def initializePlugin(objeto):
+    _anadir_scripts(objeto)
     from trepadora import __version__
 
     plugin = om.MFnPlugin(objeto, "Trepadora", __version__)

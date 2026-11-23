@@ -23,6 +23,14 @@ Eso es todo. El instalador:
 - crea el estante **Trepadora** con un botón que abre la ventana;
 - abre la ventana.
 
+**Aviso de seguridad de Maya 2027.** Maya avisa cuando carga un plug-in desde una carpeta
+que no conoce: *Untrusted Plugin Loading - Security Warning*. Es el plug-in de Trepadora:
+pulsa **Allow**. Si marcas antes **Apply to all plugins in this location**, Maya no lo
+volverá a preguntar para esa carpeta. Si pulsas **Deny**, la ventana y el estante
+funcionan, pero no aparece el menú al abrir Maya y Ctrl+Z no quita de una vez la planta
+creada con **Crear malla**; para arreglarlo, arrastra otra vez `instalar.py` y pulsa
+**Allow**.
+
 No copia nada: si mueves la carpeta, vuelve a arrastrar `instalar.py`. Para actualizar a
 una versión nueva, sustituye la carpeta y arrastra otra vez `instalar.py` (no hace falta
 reiniciar Maya).

@@ -22,7 +22,23 @@ import re
 import sys
 import time
 
-RAIZ = os.path.dirname(os.path.abspath(__file__))
+
+def _esta_carpeta():
+    """La carpeta de este archivo, aunque Maya lo ejecute sin ``__file__``.
+
+    Maya 2027 ejecuta los plug-ins sin ``__file__``; por si hace lo mismo con
+    los archivos que se sueltan en el visor, se mira también el nombre con que
+    se compiló el código.
+    """
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        import inspect
+
+        return os.path.dirname(os.path.abspath(inspect.currentframe().f_code.co_filename))
+
+
+RAIZ = _esta_carpeta()
 NOMBRE_MOD = "trepadora.mod"
 PLUGIN = "trepadora_plugin"
 ESTANTE = "Trepadora"
@@ -94,6 +110,9 @@ def instalar(carpeta_modulos=None, estante=True, abrir=True, dialogo=True):
         tiempos[paso] = round(time.time() - inicio, 2)
         inicio = time.time()
 
+    if not os.path.isdir(os.path.join(RAIZ, "scripts", "trepadora")):
+        raise RuntimeError("No encuentro Trepadora junto a instalar.py (busqué en {}). Arrastra "
+                           "instalar.py desde la carpeta de Trepadora.".format(RAIZ))
     carpeta_modulos = carpeta_modulos or _carpeta_modulos()
     ruta_mod = escribir_mod(carpeta_modulos)
 

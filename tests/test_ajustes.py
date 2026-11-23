@@ -243,6 +243,55 @@ class PruebasInstalador(unittest.TestCase):
         finally:
             shutil.rmtree(carpeta)
 
+    def test_instalador_sin_file(self):
+        """Si Maya ejecuta instalar.py sin ``__file__``, encuentra igual su carpeta."""
+        ruta = os.path.join(RAIZ, "instalar.py")
+        with open(ruta, encoding="utf-8") as f:
+            codigo = compile(f.read(), ruta, "exec")
+        espacio = {"__name__": "instalar_soltado"}
+        exec(codigo, espacio)
+        self.assertEqual(os.path.normpath(espacio["RAIZ"]), os.path.normpath(RAIZ))
+
+
+def _nombres(ruta):
+    """Los nombres que usa el código de un archivo (sin contar textos ni comentarios)."""
+    import tokenize
+
+    with open(ruta, "rb") as f:
+        return {tok.string for tok in tokenize.tokenize(f.readline) if tok.type == tokenize.NAME}
+
+
+class PruebasPlugin(unittest.TestCase):
+    def test_plugin_no_usa_file(self):
+        """Maya 2027 ejecuta el archivo del plug-in sin ``__file__``: no debe usarlo."""
+        ruta = os.path.join(RAIZ, "plug-ins", instalar.PLUGIN + ".py")
+        self.assertNotIn("__file__", _nombres(ruta))
+
+    def test_plugin_busca_scripts_con_maya(self):
+        """Ejecutado como lo hace Maya 2027 (sin ``__file__``), encuentra ``scripts``."""
+        import types
+        from unittest import mock
+
+        ruta = os.path.join(RAIZ, "plug-ins", instalar.PLUGIN + ".py")
+        carpeta_plugin = os.path.dirname(ruta)
+        scripts = os.path.normpath(os.path.join(RAIZ, "scripts"))
+        for devuelve in (carpeta_plugin, ruta):  # la carpeta o el archivo, según la versión
+            om = types.SimpleNamespace(
+                MPxCommand=object,
+                MFnPlugin=lambda _objeto, *_a, _r=devuelve: types.SimpleNamespace(
+                    loadPath=lambda: _r))
+            api = types.SimpleNamespace(OpenMaya=om)
+            maya = types.SimpleNamespace(api=api, cmds=types.SimpleNamespace())
+            modulos = {"maya": maya, "maya.api": api, "maya.api.OpenMaya": om,
+                       "maya.cmds": maya.cmds}
+            ruta_sys = [p for p in sys.path if os.path.normpath(p) != scripts]
+            with mock.patch.dict(sys.modules, modulos), mock.patch.object(sys, "path", ruta_sys):
+                with open(ruta, encoding="utf-8") as f:
+                    espacio = {"__name__": "trepadora_plugin"}
+                    exec(compile(f.read(), ruta, "exec"), espacio)
+                espacio["_anadir_scripts"](object())
+                self.assertEqual(os.path.normpath(sys.path[0]), scripts, devuelve)
+
 
 if __name__ == "__main__":
     unittest.main()
