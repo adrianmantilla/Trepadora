@@ -40,6 +40,8 @@ from superficies import Cajas  # noqa: E402
 from trepadora import prototipo, sesion as ses, superficie_maya  # noqa: E402
 from trepadora import ajustes as aj  # noqa: E402
 from trepadora.hojas import ParametrosHojas, colocar_hojas  # noqa: E402
+from trepadora import vectores as vec  # noqa: E402
+from trepadora.zonas import Zona  # noqa: E402
 from trepadora.ui import ventana  # noqa: E402
 
 
@@ -48,6 +50,37 @@ def _cajas(nombres):
 
 
 superficie_maya.SuperficieMaya = _cajas
+
+
+def _zona(nombre):
+    caja = cmds._caja(cmds._corto(nombre))
+    return Zona.desde_caja(caja[0], caja[1], nombre=cmds._corto(nombre)) if caja else None
+
+
+def _puntos_de_curva(nombre, separacion=None, cantidad=None, maximo=4000):
+    # La curva falsa es una polilínea: se reparte a lo largo igual que en Maya.
+    forma = cmds.listRelatives(nombre, shapes=True) or []
+    lista = cmds.nodos[forma[0]].get("lista", []) if forma else []
+    if len(lista) < 2:
+        return []
+    tramos = [vec.distancia(a, b) for a, b in zip(lista, lista[1:])]
+    largo = sum(tramos)
+    if cantidad is None:
+        cantidad = int(largo / max(separacion or 1.0, 1e-6)) + 1
+    cantidad = max(2, min(cantidad, maximo))
+    puntos, k, recorrido = [], 0, 0.0
+    for i in range(cantidad):
+        objetivo = largo * i / (cantidad - 1)
+        while k < len(tramos) - 1 and recorrido + tramos[k] < objetivo:
+            recorrido += tramos[k]
+            k += 1
+        f = 0.0 if tramos[k] <= 0 else min(1.0, (objetivo - recorrido) / tramos[k])
+        puntos.append(vec.suma(lista[k], vec.escala(vec.resta(lista[k + 1], lista[k]), f)))
+    return puntos
+
+
+superficie_maya.zona_de = _zona
+superficie_maya.puntos_de_curva = _puntos_de_curva
 
 
 def _punto(self, x, y, panel=None):
@@ -318,6 +351,63 @@ def p_sin_origen():
     print("   mensaje:", v.mensaje.text())
 
 
+def p_zonas_y_guia():
+    # Una caja delante del muro tapa una ventana.
+    caja = cmds.polyCube(name="ventana_caja", width=60, height=60, depth=13)[0]
+    cmds.move(-20, 70, 5.5, caja)
+    cmds.select(clear=True)
+    v.boton_zonas.click()
+    comprobar(v.sesion.zonas == [] and "Zonas" in v.mensaje.text(),
+              "sin selección, Zonas avisa: " + v.mensaje.text())
+    cmds.select(caja)
+    v.boton_zonas.click()
+    print("   zonas:", v.estado_zonas.text(), "| mensaje:", v.mensaje.text())
+    comprobar(v.sesion.zonas == ["|ventana_caja"], "zona elegida")
+    comprobar(v.boton_quitar_zonas.isEnabled(), "× de zonas activo")
+    v.controles["pasos"].casilla.setValue(260)
+    v.boton_crecer.click()
+    zona = _zona(caja)
+    puntos = [q for r in v.sesion._crecimiento.ramas for q in r.puntos]
+    comprobar(puntos and not [q for q in puntos if zona.dentro(q)],
+              "nada dentro de la zona ({} puntos)".format(len(puntos)))
+    comprobar(v.sesion.al_dia(), "al día tras crecer con la zona")
+    cmds.move(-20, 80, 5.5, caja)
+    comprobar(not v.sesion.al_dia(), "mover la caja pide volver a crecer")
+    v.boton_crecer.click()
+    # Elegir de superficie la caja junto con el muro no la vuelve superficie.
+    antes = list(v.sesion.superficies)
+    cmds.select(antes + [caja])
+    v.boton_superficie.click()
+    comprobar(v.sesion.superficies == antes, "la zona no cuenta como superficie")
+
+    # Curva guía de izquierda a derecha por el muro, sin orígenes.
+    curva = cmds.curve(degree=1, point=[(-90, 20, 6), (0, 25, 6), (90, 20, 6)], name="guia")
+    cmds.select(curva)
+    v.boton_guia.click()
+    print("   guía:", v.estado_guia.text(), "| origen:", v.estado_origen.text(),
+          "| mensaje:", v.mensaje.text())
+    comprobar(v.sesion.guias == ["|guia"], "guía elegida")
+    comprobar(not v.sesion.al_dia(), "elegir la guía pide volver a crecer")
+    v.boton_crecer.click()
+    c = v.sesion._crecimiento
+    inicio = c.ramas[0].puntos[0]
+    comprobar(vec.distancia(inicio, (-90, 20, 6)) < 10, "nace al principio de la guía: {}".format(
+        [round(x, 1) for x in inicio]))
+    comprobar(max(q[0] for q in c.ramas[0].puntos) > 60, "el tallo sigue la guía hacia la derecha")
+    print("   x máxima del tallo principal:", round(max(q[0] for q in c.ramas[0].puntos), 1))
+    otra = ses.Sesion()
+    comprobar(otra.zonas == ["|ventana_caja"] and otra.guias == ["|guia"],
+              "la escena recuerda zonas y guía")
+    v.boton_malla.click()
+    comprobar(v.sesion.ultima_planta and cmds.objExists(v.sesion.ultima_planta),
+              "crea la malla con zona y guía")
+    v.boton_quitar_zonas.click()
+    v.boton_quitar_guia.click()
+    comprobar(v.sesion.zonas == [] and v.sesion.guias == [], "× quita zonas y guía")
+    comprobar(ses.Sesion().zonas == [], "y la escena lo recuerda")
+    comprobar(not textos_crudos(v), "sin claves sin traducir")
+
+
 def p_guardar_preajuste():
     original = QtWidgets.QInputDialog.getText
     QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("Mi hiedra", True))
@@ -373,6 +463,7 @@ for nombre, f in [("abrir", p_abrir), ("superficie", p_superficie), ("origenes",
                   ("preajuste", p_preajuste), ("malla", p_malla), ("reabrir", p_reabrir),
                   ("ajustes_planta", p_ajustes_planta), ("hoja_propia", p_hoja_propia),
                   ("reiniciar", p_reiniciar), ("sin_origen", p_sin_origen),
+                  ("zonas_y_guia", p_zonas_y_guia),
                   ("guardar_preajuste", p_guardar_preajuste), ("escena_prueba", p_escena_prueba),
                   ("carga_alta", p_carga_alta)]:
     paso(nombre, f)

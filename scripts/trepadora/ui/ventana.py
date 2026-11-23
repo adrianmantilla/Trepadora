@@ -301,7 +301,8 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
 
     def _paso_superficie(self):
         caja = QtWidgets.QGroupBox(t("paso_superficie"))
-        fila = QtWidgets.QHBoxLayout(caja)
+        columna = QtWidgets.QVBoxLayout(caja)
+        fila = QtWidgets.QHBoxLayout()
         self.boton_superficie = QtWidgets.QPushButton(t("usar_seleccion"))
         self.boton_superficie.setToolTip(t("ayuda_usar_seleccion"))
         self.boton_superficie.clicked.connect(self._usar_seleccion)
@@ -309,7 +310,40 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         self.estado_superficie.setWordWrap(True)
         fila.addWidget(self.boton_superficie)
         fila.addWidget(self.estado_superficie, 1)
+        columna.addLayout(fila)
+        formulario = self._formulario()
+        fila_zonas, self.estado_zonas, self.boton_zonas, self.boton_quitar_zonas = (
+            self._elegir_objetos("zonas", self._usar_zonas, self._quitar_zonas))
+        formulario.addRow(self._etiqueta("zonas"), fila_zonas)
+        columna.addLayout(formulario)
         return caja
+
+    def _etiqueta(self, clave):
+        etiqueta = QtWidgets.QLabel(t("ajuste_" + clave))
+        etiqueta.setToolTip(t("ayuda_" + clave))
+        return etiqueta
+
+    def _elegir_objetos(self, clave, al_usar, al_quitar):
+        """Fila «estado · Usar selección · ×» para elegir objetos de la escena.
+
+        Devuelve ``(widget, estado, boton_usar, boton_quitar)``.
+        """
+        widget = QtWidgets.QWidget()
+        widget.setToolTip(t("ayuda_" + clave))
+        fila = QtWidgets.QHBoxLayout(widget)
+        fila.setContentsMargins(0, 0, 0, 0)
+        estado = QtWidgets.QLabel()
+        usar = QtWidgets.QPushButton(t("usar_seleccion"))
+        usar.setToolTip(t("ayuda_" + clave))
+        usar.clicked.connect(al_usar)
+        quitar = QtWidgets.QPushButton("×")
+        quitar.setFixedWidth(24)
+        quitar.setToolTip(t("ayuda_quitar_" + clave))
+        quitar.clicked.connect(al_quitar)
+        fila.addWidget(estado, 1)
+        fila.addWidget(usar)
+        fila.addWidget(quitar)
+        return widget, estado, usar, quitar
 
     def _paso_origen(self):
         self.caja_origen = QtWidgets.QGroupBox(t("paso_origen"))
@@ -328,6 +362,11 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         self.estado_origen.setWordWrap(True)
         columna.addLayout(fila)
         columna.addWidget(self.estado_origen)
+        formulario = self._formulario()
+        fila_guia, self.estado_guia, self.boton_guia, self.boton_quitar_guia = (
+            self._elegir_objetos("guia_curva", self._usar_guias, self._quitar_guias))
+        formulario.addRow(self._etiqueta("guia_curva"), fila_guia)
+        columna.addLayout(formulario)
         return self.caja_origen
 
     def _fila(self, formulario, control):
@@ -407,27 +446,13 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
             for control in aj.controles_del_grupo(grupo):
                 self._fila(formulario, control)
             if grupo == "hojas":
-                formulario.addRow(QtWidgets.QLabel(t("ajuste_hoja_propia")), self._hoja_propia())
+                fila, self.estado_hoja, self.boton_hoja, self.boton_quitar_hoja = (
+                    self._elegir_objetos("hoja_propia", self._usar_hoja_propia,
+                                         self._quitar_hoja_propia))
+                formulario.addRow(self._etiqueta("hoja_propia"), fila)
             caja.addWidget(plegable)
             self.grupos[grupo] = plegable
         return self.plegable_avanzados
-
-    def _hoja_propia(self):
-        widget = QtWidgets.QWidget()
-        widget.setToolTip(t("ayuda_hoja_propia"))
-        fila = QtWidgets.QHBoxLayout(widget)
-        fila.setContentsMargins(0, 0, 0, 0)
-        self.estado_hoja = QtWidgets.QLabel()
-        self.boton_hoja = QtWidgets.QPushButton(t("usar_seleccion"))
-        self.boton_hoja.clicked.connect(self._usar_hoja_propia)
-        self.boton_quitar_hoja = QtWidgets.QPushButton("×")
-        self.boton_quitar_hoja.setFixedWidth(24)
-        self.boton_quitar_hoja.setToolTip(t("ayuda_quitar_hoja_propia"))
-        self.boton_quitar_hoja.clicked.connect(self._quitar_hoja_propia)
-        fila.addWidget(self.estado_hoja, 1)
-        fila.addWidget(self.boton_hoja)
-        fila.addWidget(self.boton_quitar_hoja)
-        return widget
 
     def _pie(self):
         fila = QtWidgets.QHBoxLayout()
@@ -474,13 +499,17 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
                 nombres += "…"
             self.estado_superficie.setText(t("superficie_varias", n=len(superficies),
                                              nombres=nombres))
+        self._poner_objetos(self.estado_zonas, self.boton_quitar_zonas, s.zonas_validas(),
+                            "zonas")
+        guias = s.guias_validas()
+        self._poner_objetos(self.estado_guia, self.boton_quitar_guia, guias, "guias")
         origenes = len(s.origenes()) if hay else 0
         self.caja_origen.setEnabled(hay)
         self.boton_quitar.setEnabled(origenes > 0)
         if not hay:
             self.estado_origen.setText(t("origen_antes_superficie"))
         elif origenes == 0:
-            self.estado_origen.setText(t("origen_ninguno"))
+            self.estado_origen.setText(t("origen_ninguno_guia" if guias else "origen_ninguno"))
         elif origenes == 1:
             self.estado_origen.setText(t("origen_uno"))
         else:
@@ -490,12 +519,23 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         crecido = s.hay_crecimiento()
         self.boton_mas.setEnabled(hay and crecido)
         self.boton_reiniciar.setEnabled(crecido)
-        if s.hoja_propia:
-            self.estado_hoja.setText(s.hoja_propia.split("|")[-1])
-        else:
-            self.estado_hoja.setText(t("hoja_propia_ninguna"))
-        self.boton_quitar_hoja.setEnabled(bool(s.hoja_propia))
+        self._poner_objetos(self.estado_hoja, self.boton_quitar_hoja,
+                            [s.hoja_propia] if s.hoja_propia else [], "hojas")
         self._actualizar_pie()
+
+    @staticmethod
+    def _poner_objetos(estado, quitar, nombres, clave):
+        """Enseña qué objetos hay elegidos en una fila de ``_elegir_objetos``."""
+        cortos = [n.split("|")[-1] for n in nombres]
+        if not cortos:
+            texto = t("objetos_ninguno")
+        elif len(cortos) <= 2:
+            texto = ", ".join(cortos)
+        else:
+            texto = t("objetos_varios_" + clave, n=len(cortos))
+        estado.setText(texto)
+        estado.setToolTip("\n".join(cortos))
+        quitar.setEnabled(bool(cortos))
 
     def _actualizar_pie(self):
         estado = self.sesion.estado()
@@ -566,6 +606,24 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
 
     def _quitar_hoja_propia(self):
         self._hacer(self.sesion.quitar_hoja_propia)
+
+    def _usar_zonas(self):
+        zonas = self._hacer(self.sesion.usar_zonas)
+        if zonas:
+            self.avisar(t("zona_lista" if len(zonas) == 1 else "zonas_listas", n=len(zonas)),
+                        aviso=False)
+
+    def _quitar_zonas(self):
+        self._hacer(self.sesion.quitar_zonas)
+
+    def _usar_guias(self):
+        guias = self._hacer(self.sesion.usar_guias)
+        if guias:
+            self.avisar(t("guia_lista" if len(guias) == 1 else "guias_listas", n=len(guias)),
+                        aviso=False)
+
+    def _quitar_guias(self):
+        self._hacer(self.sesion.quitar_guias)
 
     # ------------------------------------------------------------ crecer
     def _informe(self, resultado, clave):

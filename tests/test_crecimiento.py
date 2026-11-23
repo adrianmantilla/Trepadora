@@ -16,10 +16,12 @@ from trepadora import geometria  # noqa: E402
 from trepadora.hojas import ParametrosHojas, colocar_hojas, _recorrido  # noqa: E402
 from superficies import Muro, escena_de_prueba, escena_ruina  # noqa: E402
 from trepadora import escenas  # noqa: E402
+from trepadora.zonas import Zona, Zonas  # noqa: E402
+from trepadora.guias import Guias  # noqa: E402
 
 
-def crecer(superficie, origen=(0.0, 0.0, 0.5), **ajustes):
-    c = Crecimiento(superficie, Parametros(**ajustes))
+def crecer(superficie, origen=(0.0, 0.0, 0.5), zonas=None, guias=None, **ajustes):
+    c = Crecimiento(superficie, Parametros(**ajustes), zonas=zonas, guias=guias)
     c.anadir_origen(origen)
     c.crecer()
     return c
@@ -546,6 +548,88 @@ class PruebasGrosorHojasMallas(unittest.TestCase):
         vueltas = largo / (2.0 * 3.141592653589793 * radios[1])
         v3 = malla.uvs[(lados + 1) * 3][1]
         self.assertAlmostEqual(v3, vueltas, delta=0.15 * vueltas)
+
+
+
+class PruebasZonas(unittest.TestCase):
+    def test_caja_girada_escalada_y_movida(self):
+        # Caja de 1 x 1 x 1 girada 90 grados en Y, con su X local escalada x2
+        # y llevada a (10, 0, 0). Matriz por filas, como cmds.xform: cada fila
+        # es un eje local en el mundo y la traslación va al final.
+        matriz = [0, 0, -2, 0, 0, 1, 0, 0, 1, 0, 0, 0, 10, 0, 0, 1]
+        z = Zona.desde_caja((-0.5, -0.5, -0.5), (0.5, 0.5, 0.5), matriz)
+        self.assertTrue(z.dentro((10.0, 0.0, 0.9)))     # X local (x2) -> Z del mundo
+        self.assertFalse(z.dentro((10.0, 0.0, 1.1)))
+        self.assertTrue(z.dentro((10.4, 0.0, 0.0)))     # Z local -> X del mundo
+        self.assertFalse(z.dentro((10.6, 0.0, 0.0)))
+
+    def test_distancia_y_empuje(self):
+        z = Zona.desde_caja((0, 0, 0), (10, 10, 10))
+        d, fuera = z.distancia((15, 5, 5))
+        self.assertAlmostEqual(d, 5.0)
+        self.assertEqual(fuera, (1.0, 0.0, 0.0))
+        d, fuera = z.distancia((5, 9, 5))
+        self.assertAlmostEqual(d, -1.0)                 # dentro: sale por arriba
+        self.assertEqual(fuera, (0.0, 1.0, 0.0))
+        zonas = Zonas([z])
+        self.assertIsNone(zonas.empuje((30, 5, 5), 10.0))
+        fuera, fuerza, centro = zonas.empuje((15, 5, 5), 10.0)
+        self.assertAlmostEqual(fuerza, 0.5)
+        self.assertEqual(centro, (5.0, 5.0, 5.0))
+
+    # Una ventana: caja delante del muro de la escena sencilla, con el origen
+    # justo debajo de ella.
+    VENTANA = Zona.desde_caja((-50, 40, -1), (10, 100, 12))
+
+    def test_no_crece_ni_pone_hojas_dentro_y_la_rodea(self):
+        for semilla in (1, 2, 3):
+            c = escena(semilla=semilla, zonas=[self.VENTANA])
+            puntos = todos(c)
+            self.assertFalse([q for q in puntos if self.VENTANA.dentro(q)])
+            # Sube igualmente por encima de la ventana: la rodea.
+            encima = [q for q in puntos if q[1] > 100 and -50 < q[0] < 10]
+            self.assertGreater(len(encima), 50, semilla)
+            hojas = colocar_hojas(c, ParametrosHojas(tamano=4.0))
+            for h in hojas:
+                for f in (0.0, 0.5, 1.0):
+                    self.assertFalse(self.VENTANA.dentro(v.suma(h.base, v.escala(h.adelante,
+                                                                                h.tamano * f))))
+        # Sin la zona, sí crece por donde está la ventana.
+        self.assertTrue([q for q in todos(escena(semilla=1)) if self.VENTANA.dentro(q)])
+
+
+class PruebasGuias(unittest.TestCase):
+    # Curva horizontal sobre el muro, de x = -20 a x = 80, a 30 de altura.
+    GUIA = [(-20.0 + 4.0 * k, 30.0, 5.0) for k in range(26)]
+
+    def test_punto_mas_cercano_y_tiron(self):
+        g = Guias([self.GUIA], alcance=10.0)
+        q, rumbo, d, final = g.mas_cercano((10.0, 36.0, 5.0))
+        self.assertAlmostEqual(q[1], 30.0)
+        self.assertAlmostEqual(d, 6.0)
+        self.assertEqual(rumbo, (1.0, 0.0, 0.0))
+        self.assertFalse(final)
+        direccion, fuerza = g.tiron((10.0, 36.0, 5.0))
+        self.assertGreater(direccion[0], 0.5)           # a lo largo de la curva
+        self.assertLess(direccion[1], 0.0)              # y de vuelta hacia ella
+        self.assertGreater(g.tiron((10.0, 30.5, 5.0))[1], fuerza)
+        # Pasada la punta, ya no tira hacia atrás y se apaga.
+        direccion, _ = g.tiron((85.0, 30.0, 5.0))
+        self.assertEqual(direccion, (1.0, 0.0, 0.0))
+        self.assertIsNone(g.tiron((95.0, 30.0, 5.0)))
+        self.assertEqual(g.inicios(), [((-20.0, 30.0, 5.0), (1.0, 0.0, 0.0))])
+
+    def test_el_tallo_sigue_la_curva(self):
+        for semilla in (1, 2, 3):
+            c = escena(semilla=semilla, guias=[self.GUIA])
+            puntos = todos(c)
+            cubiertos = [q for q in self.GUIA if any(v.distancia(q, p) < 6.0 for p in puntos)]
+            self.assertGreaterEqual(len(cubiertos), 0.9 * len(self.GUIA), semilla)
+            # El tallo principal llega al final del muro, siguiendo la curva.
+            self.assertGreater(max(q[0] for q in c.ramas[0].puntos), 90.0, semilla)
+        # Sin guía, el tallo principal sube en vez de ir de lado.
+        sin_guia = [max(q[0] for q in escena(semilla=s).ramas[0].puntos) for s in (1, 2, 3)]
+        self.assertLess(min(sin_guia), 60.0)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,10 @@ avanza una distancia fija. La dirección del avance mezcla varias fuerzas:
 * luz: tendencia a subir por las paredes (hacia ``direccion_luz``);
 * adherencia: si la rama está cerca de la superficie, se pega y la sigue;
 * gravedad: si la rama pierde el apoyo, cuelga y busca volver a agarrarse;
-* espacio: las ramas se apartan de las zonas ya ocupadas, para repartirse.
+* espacio: las ramas se apartan de las zonas ya ocupadas, para repartirse;
+* guía (opcional): siguen una curva dibujada por el estudiante (``guias.py``);
+* zonas prohibidas (opcional): rodean cajas por las que no deben crecer, como
+  una ventana o una puerta, y paran si entran en una (``zonas.py``).
 
 Cada paso una rama solo puede girar un ángulo máximo, lo que evita bucles.
 Las ramas hijas brotan a lo largo de la madre, separadas entre sí.
@@ -28,6 +31,8 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import vectores as v
+from .guias import Guias
+from .zonas import Zonas
 
 Vector = Tuple[float, float, float]
 
@@ -108,6 +113,12 @@ class Parametros:
     ramillas: float = 0.0
     # Largo máximo de una ramilla, en puntos.
     largo_ramilla: int = 12
+    # Fuerza con la que las ramas siguen las curvas guía, si hay (0 = nada).
+    guia: float = 0.6
+    # Hasta qué distancia de una guía la notan las ramas, en pasos.
+    alcance_guia: float = 6.0
+    # Pasos por delante a los que una rama nota una zona prohibida y la rodea.
+    alcance_zonas: float = 5.0
     # Tope de seguridad para no colgar Maya.
     limite_puntos: int = 60000
 
@@ -123,7 +134,8 @@ class Rama:
     # Índice del punto de la madre del que brota.
     indice_en_madre: int = 0
     viva: bool = True
-    # Por qué paró: "largo", "aire", "suelo", "espacio", "limite" o "" si sigue viva.
+    # Por qué paró: "largo", "aire", "suelo", "espacio", "zona", "limite",
+    # "recortada" o "" si sigue viva.
     motivo: str = ""
     pasos_sueltos: int = 0
     pasos_suelo: int = 0
@@ -206,9 +218,20 @@ class _Rejilla:
 class Crecimiento:
     """Hace crecer una o varias plantas sobre una superficie."""
 
-    def __init__(self, superficie, parametros: Optional[Parametros] = None):
+    def __init__(self, superficie, parametros: Optional[Parametros] = None, zonas=None,
+                 guias=None):
+        """``zonas``: un ``zonas.Zonas`` o una lista de ``zonas.Zona``.
+        ``guias``: listas de puntos, cada una del principio al final de su curva.
+        """
         self.superficie = superficie
         self.p = parametros or Parametros()
+        if zonas is not None and not isinstance(zonas, Zonas):
+            zonas = Zonas(zonas)
+        self.zonas = zonas if zonas else None
+        self.guias = (Guias(guias, self.p.alcance_guia * self.p.longitud_paso)
+                      if guias else None)
+        if self.guias is not None and not self.guias:
+            self.guias = None
         self.rng = random.Random(self.p.semilla)
         self.ramas: List[Rama] = []
         self.total_puntos = 0
@@ -307,6 +330,7 @@ class Crecimiento:
         d = v.suma(d, v.escala(rama.deriva, p.aleatoriedad * nervio))
         luz = p.luz * rama.luz_factor * (1.6 if principal else (0.0 if rama.cortina else 1.0))
 
+        tiron = self._tiron_guia(rama, punta)
         subida = None
         if rama.colgante:
             # Cuelga: sobre todo gravedad, un poco de vaivén y se separa algo
@@ -351,6 +375,8 @@ class Crecimiento:
             elif not principal and self._caida > 0.0:
                 peso = self._caida * 0.35 * min(1.0, len(rama.puntos) / 25.0)
                 d = v.suma(d, v.escala(v.tangente(v.ABAJO, normal), peso))
+            if tiron is not None:
+                d = v.suma(d, v.tangente(tiron, normal))
             # Quita parte de la componente que se aleja o se mete en la superficie.
             d = v.resta(d, v.escala(normal, v.punto(d, normal) * p.adherencia))
             # Acerca la punta a la distancia de separación.
@@ -362,6 +388,8 @@ class Crecimiento:
             d = v.suma(d, v.escala(v.ABAJO, p.gravedad * (0.5 + 0.5 * rama.pasos_sueltos)))
             if dist > v.EPS:
                 d = v.suma(d, v.escala(v.escala(hacia_sup, 1.0 / dist), p.adherencia))
+            if tiron is not None:
+                d = v.suma(d, v.escala(tiron, 0.5))
 
         # Se aparta de los puntos de otras ramas que tiene cerca (salvo su madre,
         # de la que acaba de brotar).
@@ -376,6 +404,8 @@ class Crecimiento:
                 d = v.suma(d, v.escala(lejos, p.evitar * (0.65 if rama.cortina else 1.0)))
 
         d = v.unitario(d) or rama.direccion
+        if self.zonas is not None:
+            d = self._rodear_zonas(punta, d, normal if pegada else None)
         d = v.limitar_giro(rama.direccion, d, self._giro_max, normal)
 
         nuevo = v.suma(punta, v.escala(d, p.longitud_paso))
@@ -398,6 +428,11 @@ class Crecimiento:
             # ramas se descuelguen.
             agarre = p.adherencia * max(0.0, 1.0 - 0.5 * p.gravedad)
             nuevo = v.suma(v.escala(nuevo, 1.0 - agarre), v.escala(pegado2, agarre))
+
+        if self.zonas is not None and self.zonas.dentro(nuevo):
+            # No crece dentro de una zona prohibida (una ventana, una puerta).
+            rama.viva, rama.motivo = False, "zona"
+            return
 
         if subida is not None:
             # Llega al pie de una pared: sube a ella y empieza a trepar.
@@ -671,6 +706,48 @@ class Crecimiento:
         if v.punto(n2, n) < 0.8 or v.distancia(c2, pie) > 0.5 * paso:
             return None
         return c2, n2
+
+    # ------------------------------------------------------- guías y zonas
+    def _tiron_guia(self, rama: Rama, punta: Vector) -> Optional[Vector]:
+        """Lo que tira de la rama la curva guía, ya con su fuerza (o None).
+
+        El tallo principal la sigue con más fuerza que sus ramas; lo que cuelga
+        por su peso no la nota.
+        """
+        if self.guias is None or self.p.guia <= 0.0 or rama.colgante or rama.cortina:
+            return None
+        tiron = self.guias.tiron(punta)
+        if tiron is None:
+            return None
+        direccion, fuerza = tiron
+        peso = self.p.guia * fuerza * (2.0 if rama.generacion == 0 else 0.8)
+        return v.escala(direccion, peso)
+
+    def _rodear_zonas(self, punta: Vector, d: Vector, normal: Optional[Vector]) -> Vector:
+        """Desvía la dirección ``d`` si unos pasos más allá hay una zona prohibida.
+
+        La rama se aparta de la zona y, sobre todo, se va hacia un lado (el
+        más alejado del centro de la zona), así la rodea en vez de pararse
+        delante. ``normal`` es la de la superficie si la rama va pegada a ella.
+        """
+        paso = self.p.longitud_paso
+        alcance = self.p.alcance_zonas * paso
+        delante = v.suma(punta, v.escala(d, 0.5 * alcance))
+        cerca = self.zonas.empuje(delante, alcance)
+        if cerca is None:
+            return d
+        fuera, fuerza, centro = cerca
+        if normal is not None:
+            fuera = v.tangente(fuera, normal)
+            lado = v.unitario(v.cruz(normal, d))
+        else:
+            lado = v.unitario(v.cruz(v.ARRIBA, d)) or v.perpendicular(d)
+        if lado is not None and v.punto(v.resta(centro, punta), lado) > 0.0:
+            lado = v.escala(lado, -1.0)
+        nueva = v.suma(d, v.escala(fuera, 1.2 * fuerza))
+        if lado is not None:
+            nueva = v.suma(nueva, v.escala(lado, 1.6 * fuerza))
+        return v.unitario(nueva) or d
 
     # ------------------------------------------------------------- utilidades
     def _sin_atravesar(self, punta: Vector, cercano: Vector, normal: Vector, q: Vector):

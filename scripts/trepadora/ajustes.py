@@ -91,6 +91,7 @@ CONTROLES = (
     _c("longitud_max", "crecimiento", "entero", "crecimiento", 20, 600),
     _c("brotes_basales", "crecimiento", "entero", "crecimiento", 0, 8),
     _c("prob_colgar", "crecimiento", "real", "crecimiento", 0.0, 1.0),
+    _c("guia", "crecimiento", "real", "crecimiento", 0.0, 2.0),
     # Ajustes avanzados: hojas.
     _c("tamano", "hojas", "real", "hojas", 0.2, 3.0),
     _c("variacion", "hojas", "real", "hojas", 0.0, 1.0),

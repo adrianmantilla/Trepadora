@@ -4,8 +4,8 @@ La ventana solo llama a estos métodos y enseña su resultado. Los errores que
 debe ver el estudiante llegan como ``Aviso``, con el texto ya traducido y
 diciendo qué hacer.
 
-Lo que la escena tiene que recordar (superficies, orígenes, hoja propia y los
-últimos ajustes usados) se guarda en el grupo ``trepadora_origenes_grp``, así
+Lo que la escena tiene que recordar (superficies, orígenes, zonas prohibidas,
+curvas guía, hoja propia y los últimos ajustes usados) se guarda en el grupo ``trepadora_origenes_grp``, así
 que al abrir la escena otro día la ventana sigue donde estaba. Cada planta
 creada guarda además los ajustes y la semilla con que se hizo, para poder
 repetirla o corregir el trabajo.
@@ -20,7 +20,7 @@ from maya import cmds
 
 from . import ajustes as aj
 from .ajustes import Aviso  # noqa: F401 (la ventana lo importa de aquí o de ajustes)
-from . import deshacer, escenas, exportar, prototipo, texturas
+from . import deshacer, escenas, exportar, prototipo, superficie_maya, texturas
 from dataclasses import fields
 
 from .crecimiento import Crecimiento, Parametros
@@ -30,6 +30,8 @@ GRUPO_DATOS = "trepadora_origenes_grp"
 ATR_SUPERFICIES = "trepadoraSuperficies"
 ATR_AJUSTES = "trepadoraAjustes"
 ATR_HOJA_PROPIA = "trepadoraHojaPropia"
+ATR_ZONAS = "trepadoraZonas"
+ATR_GUIAS = "trepadoraGuias"
 ATR_PLANTA = "trepadoraAjustes"
 OPCION_ULTIMOS = "trepadoraUltimosAjustes"
 # Paso de crecimiento por defecto: esta fracción de la diagonal de la superficie.
@@ -60,6 +62,26 @@ def _mallas_de(nodos):
     return resultado
 
 
+def _curvas_de(nodos):
+    """Transformaciones con curva NURBS dentro de ``nodos`` (también dentro de grupos)."""
+    resultado = []
+    for nodo in nodos:
+        if cmds.nodeType(nodo) == "nurbsCurve":
+            nodo = cmds.listRelatives(nodo, parent=True, fullPath=True)[0]
+        formas = cmds.listRelatives(nodo, allDescendents=True, fullPath=True,
+                                    type="nurbsCurve", noIntermediate=True) or []
+        for forma in formas:
+            padre = cmds.listRelatives(forma, parent=True, fullPath=True)[0]
+            if padre not in resultado and not _es_de_trepadora(padre):
+                resultado.append(padre)
+    return resultado
+
+
+def _seleccion():
+    """Los objetos seleccionados (de un vértice o un CV seleccionado, su objeto)."""
+    return cmds.ls(selection=True, long=True, objectsOnly=True) or []
+
+
 def _es_de_trepadora(nodo):
     """True si ``nodo`` es parte de una planta, de la vista previa o de los orígenes."""
     grupos = (GRUPO_DATOS, prototipo.GRUPO_PLANTA, prototipo.GRUPO_VISTA_PREVIA)
@@ -75,11 +97,17 @@ def _corto(nombre):
     return nombre.split("|")[-1]
 
 
+def _redondo(valores):
+    return [round(float(x), 4) for x in valores]
+
+
 class Sesion:
     """El estado de la ventana: superficies, orígenes, ajustes y la planta en crecimiento."""
 
     def __init__(self, ajustes=None):
         self.superficies = []
+        self.zonas = []
+        self.guias = []
         self.hoja_propia = None
         self.ajustes = aj.valores_por_defecto()
         # Ajustes del crecimiento que no están en la ventana (los usan las
@@ -104,8 +132,10 @@ class Sesion:
             # Líneas de una vista previa guardada: Crecer o Reiniciar las sustituyen.
             self.vista_previa = _largo(prototipo.GRUPO_VISTA_PREVIA)
         if cmds.objExists(GRUPO_DATOS):
-            self.superficies = [s for s in self._leer_json(ATR_SUPERFICIES, [])
-                                if isinstance(s, str) and cmds.objExists(s)]
+            self.superficies = [s for s in self._leer_nombres(ATR_SUPERFICIES)
+                                if cmds.objExists(s)]
+            self.zonas = [z for z in self._leer_nombres(ATR_ZONAS) if cmds.objExists(z)]
+            self.guias = [g for g in self._leer_nombres(ATR_GUIAS) if cmds.objExists(g)]
             propia = self._leer_json(ATR_HOJA_PROPIA, None)
             self.hoja_propia = propia if propia and cmds.objExists(propia) else None
             guardados = self._leer_json(ATR_AJUSTES, None)
@@ -125,6 +155,11 @@ class Sesion:
             return json.loads(cmds.getAttr(GRUPO_DATOS + "." + atributo) or "null")
         except (TypeError, ValueError):
             return defecto
+
+    def _leer_nombres(self, atributo):
+        """Lista de nombres de nodo guardada en ``atributo`` (vacía si no hay)."""
+        nombres = self._leer_json(atributo, [])
+        return [n for n in nombres if isinstance(n, str)] if isinstance(nombres, list) else []
 
     def _grupo_datos(self):
         if not cmds.objExists(GRUPO_DATOS):
@@ -154,7 +189,7 @@ class Sesion:
         Si entre lo seleccionado hay localizadores, se añaden como orígenes.
         """
         seleccion = cmds.ls(selection=True, long=True) or []
-        mallas = _mallas_de(seleccion)
+        mallas = [m for m in _mallas_de(seleccion) if m not in self.zonas]
         if not mallas:
             raise Aviso(t("falta_superficie"))
         cmds.undoInfo(openChunk=True, chunkName="Trepadora")
@@ -184,12 +219,71 @@ class Sesion:
             guardadas = self._leer_json(ATR_SUPERFICIES, None)
             if isinstance(guardadas, list):
                 self.superficies = [s for s in guardadas if isinstance(s, str)]
+            self.zonas = self._leer_nombres(ATR_ZONAS)
+            self.guias = self._leer_nombres(ATR_GUIAS)
             propia = self._leer_json(ATR_HOJA_PROPIA, None)
             self.hoja_propia = propia if propia and cmds.objExists(propia) else None
         else:
-            self.superficies = []
+            self.superficies, self.zonas, self.guias = [], [], []
         self.vista_previa = (_largo(prototipo.GRUPO_VISTA_PREVIA)
                              if cmds.objExists(prototipo.GRUPO_VISTA_PREVIA) else None)
+
+    # ------------------------------------------------------ zonas prohibidas
+    def usar_zonas(self):
+        """Paso 1: las mallas seleccionadas son zonas prohibidas (una ventana, una puerta).
+
+        Sustituyen a las que hubiera. Si alguna era superficie, deja de serlo.
+        """
+        mallas = _mallas_de(_seleccion())
+        if not mallas:
+            raise Aviso(t("falta_zona"))
+        cmds.undoInfo(openChunk=True, chunkName="Trepadora")
+        try:
+            self.zonas = mallas
+            self._guardar(ATR_ZONAS, mallas)
+            quedan = [s for s in self.superficies if s not in mallas]
+            if len(quedan) != len(self.superficies):
+                self.superficies = quedan
+                self._guardar(ATR_SUPERFICIES, quedan)
+        finally:
+            cmds.undoInfo(closeChunk=True)
+        return mallas
+
+    def quitar_zonas(self):
+        self.zonas = []
+        if cmds.objExists(GRUPO_DATOS):
+            self._guardar(ATR_ZONAS, [])
+
+    def zonas_validas(self):
+        return [z for z in self.zonas if cmds.objExists(z)]
+
+    def _zonas_para_crecer(self):
+        zonas = (superficie_maya.zona_de(z) for z in self.zonas_validas())
+        return [z for z in zonas if z is not None]
+
+    # ----------------------------------------------------------- curvas guía
+    def usar_guias(self):
+        """Paso 2: las curvas seleccionadas guían el crecimiento. Sustituyen a las que hubiera."""
+        curvas = _curvas_de(_seleccion())
+        if not curvas:
+            raise Aviso(t("falta_guia"))
+        self.guias = curvas
+        self._guardar(ATR_GUIAS, curvas)
+        return curvas
+
+    def quitar_guias(self):
+        self.guias = []
+        if cmds.objExists(GRUPO_DATOS):
+            self._guardar(ATR_GUIAS, [])
+
+    def guias_validas(self):
+        return [g for g in self.guias if cmds.objExists(g)]
+
+    def _guias_para_crecer(self, paso):
+        """Puntos de cada curva guía, separados medio paso de crecimiento."""
+        guias = (superficie_maya.puntos_de_curva(g, separacion=paso * 0.5)
+                 for g in self.guias_validas())
+        return [g for g in guias if len(g) >= 2]
 
     def _exigir_superficie(self):
         if not self.superficies_validas():
@@ -299,8 +393,12 @@ class Sesion:
         posiciones = [tuple(round(c, 4) for c in cmds.xform(o, query=True, worldSpace=True,
                                                              translation=True))
                       for o in self.origenes()]
+        zonas = [[_redondo(z.centro), [_redondo(e) for e in z.ejes], _redondo(z.medias)]
+                 for z in self._zonas_para_crecer()]
+        guias = [[_redondo(p) for p in superficie_maya.puntos_de_curva(g, cantidad=12)]
+                 for g in self.guias_validas()]
         return json.dumps([self.superficies_validas(), posiciones, crecimiento, planta["escala"],
-                           self.extra], sort_keys=True)
+                           self.extra, zonas, guias], sort_keys=True)
 
     def _olvidar(self):
         self._crecimiento = None
@@ -319,11 +417,16 @@ class Sesion:
         base.update(self.extra)
         base.update(crecimiento)
         superficies = self.superficies_validas()
-        nuevo = Crecimiento(SuperficieMaya(superficies), Parametros(**base))
+        nuevo = Crecimiento(SuperficieMaya(superficies), Parametros(**base),
+                            zonas=self._zonas_para_crecer(), guias=self._guias_para_crecer(paso))
         origenes = self.origenes()
         for o in origenes:
             nuevo.anadir_origen(cmds.xform(o, query=True, worldSpace=True, translation=True))
-        if not origenes:
+        if not origenes and nuevo.guias is not None:
+            # Sin orígenes, una planta nace al principio de cada curva guía.
+            for inicio, direccion in nuevo.guias.inicios():
+                nuevo.anadir_origen(inicio, direccion)
+        elif not origenes:
             caja = cmds.exactWorldBoundingBox(superficies)
             nuevo.anadir_origen(((caja[0] + caja[3]) / 2.0, caja[1], (caja[2] + caja[5]) / 2.0))
         self._crecimiento, self._paso = nuevo, paso
@@ -354,6 +457,9 @@ class Sesion:
             return "limite"
         motivos = self._crecimiento.motivos_de_parada()
         motivos["superficie"] = motivos.pop("aire", 0) + motivos.pop("suelo", 0)
+        # Una rama que llega a una zona prohibida ha llenado el sitio que tenía.
+        motivos["espacio"] = motivos.get("espacio", 0) + motivos.pop("zona", 0)
+        motivos.pop("recortada", None)
         motivo = max(sorted(motivos), key=motivos.get)
         return motivo if motivos[motivo] > 0 else "espacio"
 

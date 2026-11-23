@@ -36,3 +36,67 @@ class SuperficieMaya:
         detras = [c for c in empatados if (consulta - c[1]) * c[2] < 0.0]
         _, cercano, normal = (detras or empatados)[0]
         return (cercano.x, cercano.y, cercano.z), (normal.x, normal.y, normal.z)
+
+
+def _forma(nombre, tipo):
+    """La primera forma de ``tipo`` (``mesh``, ``nurbsCurve``) de ``nombre``, o None."""
+    from maya import cmds
+
+    if cmds.nodeType(nombre) == tipo:
+        return nombre
+    formas = cmds.listRelatives(nombre, shapes=True, fullPath=True, type=tipo,
+                                noIntermediate=True) or []
+    return formas[0] if formas else None
+
+
+def zona_de(nombre):
+    """La zona prohibida de la malla ``nombre``, o None si no es una malla.
+
+    Es la caja de la malla en su propio espacio llevada al mundo con su
+    matriz: si el estudiante gira o escala la caja, la zona gira y escala con
+    ella. La caja se lee de la forma, así que vale aunque esté oculta.
+    """
+    from maya import cmds
+
+    from .zonas import Zona
+
+    formas = cmds.listRelatives(nombre, shapes=True, fullPath=True, type="mesh",
+                                noIntermediate=True) or []
+    if not formas:
+        return None
+    minimo, maximo = [1e30] * 3, [-1e30] * 3
+    for forma in formas:
+        a = cmds.getAttr(forma + ".boundingBoxMin")[0]
+        b = cmds.getAttr(forma + ".boundingBoxMax")[0]
+        minimo = [min(m, x) for m, x in zip(minimo, a)]
+        maximo = [max(m, x) for m, x in zip(maximo, b)]
+    matriz = cmds.xform(nombre, query=True, matrix=True, worldSpace=True)
+    return Zona.desde_caja(minimo, maximo, matriz, nombre.split("|")[-1])
+
+
+def puntos_de_curva(nombre, separacion=None, cantidad=None, maximo=4000):
+    """Puntos de la curva ``nombre`` en el mundo, del principio al final.
+
+    Repartidos a lo largo de la curva cada ``separacion`` (o ``cantidad``
+    puntos en total). Lista vacía si no es una curva.
+    """
+    forma = _forma(nombre, "nurbsCurve")
+    if forma is None:
+        return []
+    lista = om.MSelectionList()
+    lista.add(forma)
+    curva = om.MFnNurbsCurve(lista.getDagPath(0))
+    largo = curva.length()
+    if cantidad is None:
+        cantidad = int(largo / max(float(separacion or 1.0), 1e-6)) + 1
+    cantidad = max(2, min(int(cantidad), maximo))
+    final = curva.knotDomain[1]
+    puntos = []
+    for i in range(cantidad):
+        if i == cantidad - 1:
+            parametro = final
+        else:
+            parametro = min(curva.findParamFromLength(largo * i / (cantidad - 1)), final)
+        p = curva.getPointAtParam(parametro, om.MSpace.kWorld)
+        puntos.append((p.x, p.y, p.z))
+    return puntos

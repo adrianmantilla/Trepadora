@@ -35,6 +35,8 @@ class SesionFalsa:
 
     def __init__(self):
         self.superficies = []
+        self.zonas = []
+        self.guias = []
         self.hoja_propia = None
         self.ajustes = aj.valores_por_defecto()
         self.extra = {}
@@ -47,6 +49,26 @@ class SesionFalsa:
 
     def superficies_validas(self):
         return self.superficies
+
+    def zonas_validas(self):
+        return self.zonas
+
+    def guias_validas(self):
+        return self.guias
+
+    def usar_zonas(self):
+        self.zonas = ["|ventana_caja", "|puerta_caja", "|otra_caja"]
+        return self.zonas
+
+    def quitar_zonas(self):
+        self.zonas = []
+
+    def usar_guias(self):
+        self.guias = ["|grupo|curva_guia"]
+        return self.guias
+
+    def quitar_guias(self):
+        self.guias = []
 
     def origenes(self):
         return list(self._origenes)
@@ -171,6 +193,29 @@ class PruebasVentana(unittest.TestCase):
         v.boton_crecer.click()
         self.assertTrue(v.boton_mas.isEnabled())
         self.assertIn("12.345", v.estado_pie.text())
+
+    def test_zonas_prohibidas_y_curva_guia(self):
+        v = self.v
+        self.assertFalse(v.boton_quitar_zonas.isEnabled())
+        v.boton_zonas.click()
+        self.assertEqual(v.estado_zonas.text(), "3 zonas")
+        self.assertIn("ventana_caja", v.estado_zonas.toolTip())
+        self.assertTrue(v.boton_quitar_zonas.isEnabled())
+        self.assertIn("3", v.mensaje.text())
+        v.boton_quitar_zonas.click()
+        self.assertEqual(self.sesion.zonas, [])
+        self.assertFalse(v.boton_quitar_zonas.isEnabled())
+        # La curva guía está en el paso 2: espera a la superficie.
+        v.boton_superficie.click()
+        self.assertNotIn("curva", v.estado_origen.text())
+        v.boton_guia.click()
+        self.assertEqual(v.estado_guia.text(), "curva_guia")
+        self.assertIn("curva guía", v.estado_origen.text())
+        v.boton_quitar_guia.click()
+        self.assertEqual(self.sesion.guias, [])
+        self.assertFalse(v.boton_quitar_guia.isEnabled())
+        self.assertEqual([x for x in self._textos() if re.fullmatch(r"[a-z]+(_[a-z0-9]+)+", x)],
+                         [])
 
     def test_resolucion_de_texturas(self):
         """El ajuste cambia las texturas de la escena y no entra en los preajustes."""
