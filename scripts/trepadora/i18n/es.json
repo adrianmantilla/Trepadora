@@ -171,6 +171,7 @@
   "exportar_filtro": "FBX para motores de juego (*.fbx);;Alembic para otros programas (*.abc)",
   "exportar_formato": "«{ruta}»: elige un archivo .fbx o .abc.",
   "exportar_vacia": "La planta no tiene tallos ni hojas que exportar.",
+  "exportar_error": "No se pudo exportar: {error}",
   "exportar_fallo": "No se pudo escribir {ruta}. Mira el Script Editor por si Maya dice por qué.",
   "exportado": "Exportada a {archivo}, con {n} texturas en la carpeta {carpeta}.",
   "exportado_sin_color": "No se pudo crear el mapa de color de {juegos}: se copió el resto.",

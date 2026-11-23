@@ -622,7 +622,13 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         if not ruta:
             return
         self._ultima_exportacion = ruta
-        informe = self._hacer(self.sesion.exportar, ruta)
+        try:
+            informe = self._hacer(self.sesion.exportar, ruta)
+        except (RuntimeError, OSError) as error:
+            # Lo que diga Maya o el sistema (sin permiso para escribir, sin
+            # el plug-in de FBX...) se enseña como aviso, no como un error de Python.
+            self.avisar(t("exportar_error", error=str(error).strip()))
+            return
         if informe is None:
             return
         self.avisar(t("exportado", archivo=os.path.basename(informe["ruta"]),

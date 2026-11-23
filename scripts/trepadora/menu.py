@@ -90,6 +90,9 @@ def exportar_seleccion():
     except Aviso as aviso:
         cmds.warning(str(aviso))
         return None
+    except (RuntimeError, OSError) as error:
+        cmds.warning(t("exportar_error", error=str(error).strip()))
+        return None
     print(t("exportado", archivo=os.path.basename(informe["ruta"]), n=len(informe["texturas"]),
             carpeta=os.path.basename(informe["carpeta"])))
     if informe["sin_color"]:
