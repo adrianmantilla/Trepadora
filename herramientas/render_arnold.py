@@ -45,14 +45,18 @@ DEGRADADO = ((0.0, BRUMA), (0.5, BRUMA), (0.515, (0.60, 0.70, 0.88)),
 AMPLIAR_SUELO = 25.0
 # Cuánta bruma lleva el suelo según la distancia al centro de la ruina, como
 # (distancia en unidades de la escena, bruma). Sin esto el suelo acaba en una
-# línea dura contra el cielo y parece un plano infinito. Empieza cerca porque
+# línea dura contra el cielo y parece un plano infinito. Es un término medio:
 # desde una cámara baja todo lo que queda más allá de unas 2000 unidades se
-# aprieta en una franja de pocos píxeles bajo el horizonte.
-LEJANIA = ((250, 0.0), (900, 0.15), (1800, 0.45), (3500, 0.8), (8000, 1.0))
+# aprieta en una franja de pocos píxeles bajo el horizonte, pero en la vista
+# general ese mismo tramo ocupa media imagen y, con mucha bruma, la hierba
+# detrás de la ruina salía gris y plana.
+LEJANIA = ((300, 0.0), (1200, 0.1), (2400, 0.35), (4500, 0.75), (8000, 1.0))
 # Media anchura del suelo ya agrandado (700 × AMPLIAR_SUELO / 2): ahí está la
 # posición 1 de la rampa circular.
 RADIO_SUELO = 350.0 * AMPLIAR_SUELO
-SOL = dict(color=(1.0, 0.92, 0.8), intensidad=2.5, giro=(-50, -35, 0), angulo=2.0)
+# Con el cielo azul y la bruma, un sol de 0.92 de verde dejaba la escena fría:
+# más anaranjado y algo más fuerte, para que la piedra y la hierba se calienten.
+SOL = dict(color=(1.0, 0.86, 0.68), intensidad=2.8, giro=(-50, -35, 0), angulo=2.0)
 # Vistas propias del render. «contraluz» mira la ventana con el sol bajo detrás
 # del muro: se ve la luz que atraviesa las hojas que cuelgan en el hueco.
 # El sol, más fuerte: a contraluz es lo que hace brillar las hojas.
@@ -70,9 +74,11 @@ DESGASTE = dict(escala=0.07, oscuro=0.7, claro=1.15, escala_relieve=0.15, reliev
 SUELO = (0.32, 0.31, 0.28)
 # En el suelo, manchas más pequeñas (grandes, se leen como nubes) y, por debajo,
 # un campo de rodales de tierra y hierba seca de unas 150 unidades: el suelo
-# llega hasta el horizonte y, gris y liso, parecía agua o asfalto.
-DESGASTE_SUELO = dict(DESGASTE, escala=0.14, relieve=0.4,
-                      campo=(0.006, (0.30, 0.25, 0.18), (0.17, 0.19, 0.08)))
+# llega hasta el horizonte y, gris y liso, parecía agua o asfalto. El ruido casi
+# nunca llega a sus extremos (se queda entre 0.3 y 0.7), así que los dos colores
+# del campo van más separados de lo que se quiere ver: tierra parda y hierba verde.
+DESGASTE_SUELO = dict(DESGASTE, escala=0.14, relieve=0.4, oscuro=0.65, claro=1.25,
+                      campo=(0.006, (0.40, 0.30, 0.16), (0.08, 0.19, 0.04)))
 
 
 def _iniciar():
