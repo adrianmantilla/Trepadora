@@ -41,7 +41,7 @@ class ParametrosHojas:
     # zonas más ralas, planas y claras entre ellas (0 = reparto uniforme).
     manchas: float = 0.6
     # Tamaño de esas matas, en largos de hoja.
-    escala_manchas: float = 11.0
+    escala_manchas: float = 9.0
     # Cuántas hojas tiran a bronce, como la hiedra en invierno (con 0.015,
     # alrededor de una de cada cien). Salen en rodales de hojas viejas, cerca
     # de la raíz.
@@ -149,12 +149,17 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             if costado is None:
                 continue
             costado = v.escala(costado, lado)
+            if frente is not None and v.punto(costado, rama.normales[k]) < -0.3:
+                # Un tallo que cuelga junto al lateral de una ventana: la hoja
+                # que iría contra la piedra se descarta al chocar y el tallo se
+                # queda pelado. Sale hacia el hueco, como buscando la luz.
+                costado = v.escala(costado, -1.0)
 
             # Las hojas de una punta que sigue creciendo son pequeñas; si la rama
             # ya paró hace tiempo, sus últimas hojas también han madurado.
             desde_punta = (n - k) + (0 if rama.viva else jovenes * 0.3)
             edad = min(1.0, desde_punta / float(max(jovenes, 1.0)))
-            tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
+            tamano = p.tamano * (0.4 + 0.6 * edad) * vigor * escala_gen
             # Más grandes cerca de la raíz y en las matas; sin llegar a hojitas
             # diminutas en los claros más alejados.
             zona = 1.0 + _K_DEG_TAMANO * p.degradado * (0.45 - lejos) * (0.4 if colgante else 1.0)
@@ -273,14 +278,15 @@ _ZONA_MIN = 0.6
 _K_CLARO_MATA = 1.8
 # Los tallos que cuelgan van tupidos (como en una mata) pero con el verde de
 # un claro.
-_MATA_COLGANTE = 0.75
+_MATA_COLGANTE = 0.9
 _CLARO_COLGANTE = 0.15
-# Las matas salen de un ruido con una segunda octava débil: manchas grandes de
-# borde irregular, sin salpicar. Como el ruido se pasa a percentil, con
-# _ANCHO_MATA 0.8 queda un 10 % de la planta en claro pleno, un 10 % en mata
-# plena y el resto en transición suave.
+# Las matas salen de un ruido de dos octavas: manchas grandes de borde
+# irregular, y la segunda octava abre algún claro dentro de las matas grandes
+# (sin ella, lo alto de un muro podía quedar como un solo bloque). Como el
+# ruido se pasa a percentil, con _ANCHO_MATA 0.8 queda un 10 % de la planta en
+# claro pleno, un 10 % en mata plena y el resto en transición suave.
 _OCTAVAS_MATA = 2
-_PERSISTENCIA_MATA = 0.3
+_PERSISTENCIA_MATA = 0.45
 _ANCHO_MATA = 0.8
 # Degradado por distancia a la raíz, flojo: si pesa mucho, la planta se lee
 # como "tupida abajo, rala arriba" en vez de matas repartidas.
