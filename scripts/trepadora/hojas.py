@@ -1,5 +1,6 @@
 """Colocación de hojas a lo largo de las ramas (sin Maya)."""
 
+import bisect
 import math
 import random
 from dataclasses import dataclass
@@ -83,6 +84,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
     alturas = [q[1] for r in crecimiento.ramas for q in r.puntos]
     alto_min = min(alturas) if alturas else 0.0
     alto_total = max(max(alturas) - alto_min, 1e-6) if alturas else 1.0
+    matas = _campo_de_matas(crecimiento, escala_manchas, p.semilla)
     for i_rama, rama in enumerate(crecimiento.ramas):
         n = len(rama.puntos)
         if n < 2:
@@ -124,10 +126,9 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # Matas y claros: un ruido suave en el espacio hace que unas zonas
             # estén más tupidas que otras, como en una hiedra de verdad. Lo que
             # cuelga en el aire va siempre bien vestido.
-            mata = _suave(_ruido(_girar(punto), escala_manchas, p.semilla,
-                                 _OCTAVAS_MATA, _PERSISTENCIA_MATA))
+            mata = _suave(matas[i_rama][k])
             if colgante:
-                mata = max(mata, 0.5)
+                mata = max(mata, _MATA_COLGANTE)
             densidad *= 1.0 - _K_DENSIDAD * p.manchas * (1.0 - mata)
             if piso is not None and normal_sup[1] > 0.8 and punto[1] < piso:
                 densidad *= p.en_suelo
@@ -216,7 +217,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # Los claros son de un verde más claro y las matas, más oscuras;
             # por manchas, no hoja a hoja. Lo más alejado de la raíz aclara un
             # poco. Alguna hoja vieja tira a bronce.
-            claridad = (_K_CLARO_LEJOS * (lejos - 0.4) + 2.4 * p.manchas * (0.5 - mata)
+            # Lo que cuelga queda a la sombra de dintel o saliente: un poco
+            # más claro, para que no salga casi negro.
+            claridad = (_K_CLARO_LEJOS * (lejos - 0.4)
+                        + (_CLARO_COLGANTE if colgante else _K_CLARO_MATA * p.manchas * (0.5 - mata))
                         + rng.gauss(0.0, 0.1))
             tinte = 0.0
             bajo = (punto[1] - alto_min) / alto_total
@@ -262,14 +266,22 @@ def _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup):
 # Cuánto cambian la densidad y el tamaño entre mata y claro. En los claros
 # quedan menos hojas, pero no diminutas (_ZONA_MIN): si no, los tallos se ven
 # como una red.
-_K_DENSIDAD = 1.2
-_K_TAMANO = 1.1
+_K_DENSIDAD = 1.0
+_K_TAMANO = 0.6
 _ZONA_MIN = 0.6
+# Cuánto más oscuras son las matas y más claros los claros.
+_K_CLARO_MATA = 1.8
+# Los tallos que cuelgan van tupidos (como en una mata) pero con el verde de
+# un claro.
+_MATA_COLGANTE = 0.75
+_CLARO_COLGANTE = 0.15
 # Las matas salen de un ruido con una segunda octava débil: manchas grandes de
-# borde irregular, sin salpicar. _ANCHO_MATA suaviza el paso de mata a claro.
+# borde irregular, sin salpicar. Como el ruido se pasa a percentil, con
+# _ANCHO_MATA 0.8 queda un 10 % de la planta en claro pleno, un 10 % en mata
+# plena y el resto en transición suave.
 _OCTAVAS_MATA = 2
 _PERSISTENCIA_MATA = 0.3
-_ANCHO_MATA = 0.6
+_ANCHO_MATA = 0.8
 # Degradado por distancia a la raíz, flojo: si pesa mucho, la planta se lee
 # como "tupida abajo, rala arriba" en vez de matas repartidas.
 _K_DEG_DENSIDAD = 0.35
@@ -437,6 +449,22 @@ def _girar(q):
     return (0.8572 * q[0] - 0.5150 * q[1],
             0.3767 * q[0] + 0.6269 * q[1] - 0.6820 * q[2],
             0.3513 * q[0] + 0.5846 * q[1] + 0.7314 * q[2])
+
+
+def _campo_de_matas(crecimiento, escala, semilla):
+    """Ruido de matas en cada punto de rama, pasado a su percentil (0 a 1).
+
+    Así cada planta tiene la misma proporción de matas y de claros, sea cual
+    sea su tamaño: en una escena pequeña, una sola mancha de ruido podía
+    dejar casi todo el muro en claro.
+    """
+    crudo = [[_ruido(_girar(q), escala, semilla, _OCTAVAS_MATA, _PERSISTENCIA_MATA)
+              for q in rama.puntos] for rama in crecimiento.ramas]
+    orden = sorted(x for fila in crudo for x in fila)
+    if len(orden) < 2:
+        return crudo
+    total = float(len(orden) - 1)
+    return [[bisect.bisect_left(orden, x) / total for x in fila] for fila in crudo]
 
 
 def _suave(n):

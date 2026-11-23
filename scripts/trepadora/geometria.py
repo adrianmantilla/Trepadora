@@ -157,7 +157,7 @@ def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
         if claridad > 0.0:
             color = _mezclar(color, _VERDE_CLARO, 0.85 * claridad)
         else:
-            color = _mezclar(color, _VERDE_VIEJO, -0.7 * claridad)
+            color = _mezclar(color, _VERDE_VIEJO, -0.55 * claridad)
         color = _mezclar(color, _BRONCE, getattr(hoja, "tinte", 0.0))
         # La hiedra de verdad es un verde apagado: sin esto, en el espacio
         # lineal de Maya todas las hojas salen del mismo verde chillón.

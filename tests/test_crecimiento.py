@@ -152,6 +152,19 @@ class PruebasEscena(unittest.TestCase):
         lejos = [q for q in puntos if v.distancia(q, sup.mas_cercano(q)[0]) > c.p.distancia_adherencia]
         self.assertLess(len(lejos) / len(puntos), 0.1)
 
+    def test_matas_y_claros_repartidos_en_escena_pequena(self):
+        # En una escena pequeña, una sola mancha de ruido de matas puede
+        # cubrir todo el muro. El campo de matas va por percentiles: cada
+        # planta tiene la misma proporción de matas y de claros.
+        from trepadora import hojas
+        c = escena(semilla=4, gravedad=1.0, prob_rama=0.08)
+        escala = c.p.longitud_paso * 2.4 * ParametrosHojas().escala_manchas
+        valores = [x for fila in hojas._campo_de_matas(c, escala, 4) for x in fila]
+        self.assertAlmostEqual(sum(valores) / len(valores), 0.5, delta=0.02)
+        claros = sum(1 for x in valores if x < 0.3) / len(valores)
+        self.assertGreater(claros, 0.25)
+        self.assertLess(claros, 0.35)
+
     def test_ramillas_cortas_que_no_se_ramifican(self):
         c = escena(semilla=2, ramillas=0.1)
         ramillas = [r for r in c.ramas if r.ramilla]
