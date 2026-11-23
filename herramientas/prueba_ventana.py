@@ -155,12 +155,18 @@ def _vigilar():
         if clave in _vistos:
             continue
         _vistos.add(clave)
-        _informe.setdefault("dialogos", []).append({
+        dialogos = _informe.setdefault("dialogos", [])
+        captura = os.path.join(_SALIDA, "dialogo_{}.png".format(len(dialogos) + 1))
+        try:
+            w.grab().save(captura)
+        except Exception:
+            captura = None
+        dialogos.append({
             "t": round(time.time() - _inicio, 1), "paso": _informe.get("paso_actual"),
             "clase": clave[0], "titulo": titulo, "nombre": clave[2],
             "textos": [x.text()[:600] for x in w.findChildren(QtWidgets.QLabel) if x.text()][:12],
             "botones": [x.text() for x in w.findChildren(QtWidgets.QAbstractButton)
-                        if x.text()][:12]})
+                        if x.text()][:12], "captura": captura})
 
 
 def _empezar_vigia():
