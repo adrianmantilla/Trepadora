@@ -676,7 +676,7 @@ class Sesion:
                     crecimiento, paso, hojas, planta["grosor"], semilla,
                     instancias=planta["instancias"], forma_hoja=planta["forma_hoja"],
                     tipo_tallo=planta["tipo_tallo"], hoja_propia=hoja_propia,
-                    lados=planta["lados"], resumen=resumen))
+                    lados=planta["lados"], resumen=resumen, raices=planta["raices"]))
                 cmds.addAttr(grupo, longName=ATR_PLANTA, dataType="string")
                 cmds.setAttr(grupo + "." + ATR_PLANTA, json.dumps(datos), type="string")
                 cmds.select(grupo, replace=True)

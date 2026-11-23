@@ -183,10 +183,12 @@ def _elegir(valor, opciones, por_defecto, clave_aviso, **datos):
 
 def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instancias=True,
                  forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None, lados=None,
-                 resumen=None, resolucion_texturas=None):
+                 resumen=None, resolucion_texturas=None, raices=0.5):
     """Crea tallos, hojas y rabillos dentro de un grupo nuevo (ver ``ejecutar``).
 
     ``lados``: lados del tubo de los tallos (por defecto, los del tipo de tallo).
+    ``raices``: cuántas raíces adhesivas agarran los tallos a la pared (0 a 1);
+    van en la malla de los tallos.
     ``resumen``: si se da un diccionario, se rellena con ``hojas`` y ``modelos``.
     ``resolucion_texturas``: una de ``texturas.RESOLUCIONES`` (por defecto, la
     elegida en la ventana).
@@ -209,11 +211,11 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instan
     hoja_tex = texturas.juego_hoja(forma_hoja)
     grupo = _bajo(None, cmds.group(empty=True, name=GRUPO_PLANTA))
     # (nombre de la pieza, malla, color, material, juego de texturas)
+    tallos = geometria.malla_tallos(crecimiento, radios, lados=lados, semilla=semilla,
+                                    tipo=tipo_tallo)
+    geometria.anadir_raices(tallos, crecimiento, radios, raices, semilla=semilla, tipo=tipo_tallo)
     piezas = [
-        ("trepadora_tallos",
-         geometria.malla_tallos(crecimiento, radios, lados=lados, semilla=semilla,
-                                tipo=tipo_tallo),
-         (0.30, 0.21, 0.13), "trepadora_tallos", "corteza"),
+        ("trepadora_tallos", tallos, (0.30, 0.21, 0.13), "trepadora_tallos", "corteza"),
         ("trepadora_rabillos", geometria.malla_peciolos(hojas, tipo=tipo_tallo),
          (0.25, 0.33, 0.12), "trepadora_rabillos", "corteza"),
     ]

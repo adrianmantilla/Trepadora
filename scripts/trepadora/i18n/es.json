@@ -125,6 +125,8 @@
   "falta_hoja_propia": "Selecciona la malla de tu hoja y pulsa Usar selección.",
   "ajuste_resolucion": "Resolución del tallo",
   "ayuda_resolucion": "Lados del tubo de los tallos: baja pesa menos y alta se ve más redonda de cerca.",
+  "ajuste_raices": "Raíces adhesivas",
+  "ayuda_raices": "Raicillas que agarran los tallos a la pared, como las de la hiedra (0 = ninguna). Solo salen donde el tallo va pegado a una superficie, no en lo que cuelga ni en las puntas.",
   "opcion_resolucion_baja": "Baja",
   "opcion_resolucion_media": "Media",
   "opcion_resolucion_alta": "Alta",

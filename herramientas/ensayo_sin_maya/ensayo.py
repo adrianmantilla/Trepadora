@@ -110,13 +110,13 @@ ses.Sesion._punto_de_planta_bajo = _punto_de_planta
 
 def _planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instancias=True,
             forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None, lados=None,
-            resumen=None):
+            resumen=None, raices=0.5):
     datos = dict(ajustes_hojas)
     datos["tamano"] = paso * 2.4 * datos.get("tamano", 1.0)
     hojas = colocar_hojas(crecimiento, ParametrosHojas(**datos))
     grupo = cmds.group(empty=True, name=prototipo.GRUPO_PLANTA)
     LLAMADAS.append(dict(lados=lados, forma=forma_hoja, tallo=tipo_tallo, propia=hoja_propia,
-                         instancias=instancias, semilla=semilla, grosor=grosor))
+                         instancias=instancias, semilla=semilla, grosor=grosor, raices=raices))
     if resumen is not None:
         resumen.update(hojas=len(hojas), modelos=49 if instancias else 0)
     return grupo

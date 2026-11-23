@@ -102,6 +102,7 @@ CONTROLES = (
     _c("instancias", "planta", "si_no", "hojas", defecto=True),
     # Ajustes avanzados: tallos.
     _c("resolucion", "planta", "opcion", "tallos", defecto="media", opciones=RESOLUCIONES),
+    _c("raices", "planta", "real", "tallos", 0.0, 1.0, defecto=0.5),
 )
 
 POR_CLAVE = {c.clave: c for c in CONTROLES}
@@ -178,7 +179,7 @@ def repartir(valores):
       dependen del tamaño de la escena).
     * ``hojas``: argumentos para ``ParametrosHojas`` (``tamano`` relativo: 1 = automático).
     * ``planta``: ``grosor``, ``escala``, ``forma_hoja``, ``tipo_tallo``,
-      ``instancias`` y ``lados``.
+      ``instancias``, ``raices`` y ``lados``.
     """
     ajustes, _ = limpiar(valores)
     crecimiento, hojas, planta = {}, {}, {}

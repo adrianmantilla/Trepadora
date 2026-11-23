@@ -55,7 +55,7 @@ class PruebasControles(unittest.TestCase):
         self.assertEqual(hojas["semilla"], 7)
         self.assertEqual(crecimiento["gravedad"], 1.2)
         self.assertEqual(set(planta), {"grosor", "escala", "forma_hoja", "tipo_tallo",
-                                       "instancias", "lados"})
+                                       "instancias", "lados", "raices"})
 
     def test_ajustar_recorta_y_convierte(self):
         pasos = aj.POR_CLAVE["pasos"]

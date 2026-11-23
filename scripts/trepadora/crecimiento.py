@@ -794,6 +794,10 @@ class Crecimiento:
     def _consultar(self, punto: Vector) -> Tuple[Vector, Vector]:
         return consultar(self.superficie, punto)
 
+    def cercano(self, punto) -> Tuple[Vector, Vector]:
+        """Punto de la superficie más cercano a ``punto`` y su normal."""
+        return self._consultar(v.vec(punto))
+
     def _registrar(self, punto: Vector, rama: int) -> None:
         self._rejilla.anadir(punto, rama)
         h = v.punto(punto, self._luz)

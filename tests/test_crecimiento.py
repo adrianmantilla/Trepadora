@@ -689,5 +689,36 @@ class PruebasRecortar(unittest.TestCase):
         self.assertEqual([r.puntos for r in a.ramas], [r.puntos for r in b.ramas])
 
 
+
+class PruebasRaices(unittest.TestCase):
+    def test_raices_del_tallo_a_la_pared(self):
+        c = escena(semilla=2)
+        paso = c.p.longitud_paso
+        radios = c.grosores(paso * 0.45, paso * 0.06)
+        sin = geometria.malla_tallos(c, radios, semilla=2)
+        self.assertEqual(geometria.anadir_raices(sin, c, radios, 0.0), 0)
+        malla = geometria.malla_tallos(c, radios, semilla=2)
+        antes = len(malla.vertices)
+        n = geometria.anadir_raices(malla, c, radios, 1.0, semilla=2)
+        self.assertGreater(n, 300)
+        self.assertEqual(len(malla.vertices), antes + n * 9)   # 3 anillos de 3 lados
+        # Malla válida: índices y UVs dentro de rango, una UV por esquina de cara.
+        self.assertEqual(len(malla.indices), sum(malla.conteos))
+        self.assertEqual(len(malla.uv_indices), len(malla.indices))
+        self.assertLess(max(malla.indices), len(malla.vertices))
+        self.assertLess(max(malla.uv_indices), len(malla.uvs))
+        # Cada raíz acaba sobre la pared (o el suelo): el último anillo, pegado a ella.
+        sup = escena_de_prueba()
+        r_max = max(max(r) for r in radios)
+        for i in range(n):
+            centro = [sum(malla.vertices[antes + 9 * i + 6 + j][e] for j in range(3)) / 3.0
+                      for e in range(3)]
+            cercano, _ = sup.mas_cercano(tuple(centro))
+            self.assertLess(v.distancia(tuple(centro), cercano), 0.2 * r_max)
+        # Menos cantidad, menos raíces.
+        otra = geometria.malla_tallos(c, radios, semilla=2)
+        self.assertLess(geometria.anadir_raices(otra, c, radios, 0.3, semilla=2), n)
+
+
 if __name__ == "__main__":
     unittest.main()
