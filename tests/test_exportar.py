@@ -169,6 +169,80 @@ class PruebasColor(unittest.TestCase):
                                                 (1, 1, 1)))
 
 
+class PruebasHojasLigeras(unittest.TestCase):
+    def setUp(self):
+        self.hojas = _hojas(semilla=3)
+        self.malla = geometria.malla_hojas(self.hojas, semilla=3, forma="hiedra")
+
+    def test_cada_hoja_suelta_y_su_tarjeta(self):
+        sueltas = exportar.hojas_sueltas(self.malla)
+        self.assertEqual(len(sueltas), len(self.hojas))
+        self.assertEqual(sum(len(h.vertices) for h in sueltas), len(self.malla.vertices))
+        ligeras = exportar.hojas_ligeras(sueltas)
+        self.assertEqual(len(ligeras.vertices), 6 * len(self.hojas))
+        self.assertEqual(ligeras.conteos, [4] * (2 * len(self.hojas)))
+        self.assertLess(len(ligeras.vertices) * 8, len(self.malla.vertices))
+        self.assertTrue(all(0.0 <= u <= 1.0 and 0.0 <= w <= 1.0 for u, w in ligeras.uvs))
+
+    def test_la_tarjeta_cubre_la_hoja_y_se_dobla_hacia_su_cara(self):
+        hoja = exportar.hojas_sueltas(self.malla)[0]
+        puntos, uvs, colores = exportar.esquinas(hoja)
+        carta = exportar.tarjeta(puntos, uvs, colores)
+        self.assertEqual(len(carta.vertices), 6)
+        # Nervio en u = 0,5 y la silueta dentro del rectángulo de UV.
+        self.assertEqual([round(u, 6) for u, _ in carta.uvs[:3]][1], 0.5)
+        self.assertLessEqual(carta.uvs[0][0], min(u for u, _ in uvs))
+        self.assertGreaterEqual(carta.uvs[5][1], max(w for _, w in uvs))
+        # La cara de la tarjeta mira como la de la hoja, y los bordes se levantan hacia ella.
+        h = self.hojas[0]
+        a, b, c = carta.vertices[0], carta.vertices[1], carta.vertices[4]
+        normal = v.unitario(v.cruz(v.resta(b, a), v.resta(c, b)))
+        self.assertGreater(v.punto(normal, h.normal), 0.5)
+        borde = v.resta(carta.vertices[0], carta.vertices[1])
+        self.assertGreater(v.punto(borde, h.normal), 0.0)
+        self.assertTrue(_cerca(carta.colores[0], exportar.color_medio(hoja), 0.03))
+
+    def test_mascara_alfa(self):
+        n = 64
+        mascara = exportar.mascara_alfa("hiedra", n)
+        self.assertEqual(len(mascara), n * n)
+        self.assertEqual(mascara[(n // 2) * n + n // 2], 255)   # el centro, dentro
+        self.assertEqual(mascara[0], 0)                          # la esquina, fuera
+        for j in range(n):
+            fila = mascara[j * n:(j + 1) * n]
+            self.assertEqual(fila, fila[::-1])                   # simétrica por el nervio
+        # Cubre lo mismo que las hojas: casi todos sus vértices, también los
+        # del borde, caen dentro (las hojas varían algo de ancho).
+        n = 256
+        mascara = exportar.mascara_alfa("hiedra", n)
+        dentro = 0
+        for u, w in self.malla.uvs:
+            i, j = min(n - 1, int(u * n)), min(n - 1, int((1.0 - w) * n))
+            vecinos = [mascara[jj * n + ii] for jj in range(max(0, j - 1), min(n, j + 2))
+                       for ii in range(max(0, i - 1), min(n, i + 2))]
+            dentro += max(vecinos) > 0
+        self.assertGreater(dentro / len(self.malla.uvs), 0.95)
+
+    def test_mapa_de_color_con_silueta(self):
+        try:
+            from PySide6 import QtGui
+        except ImportError:
+            self.skipTest("sin PySide6")
+        carpeta = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, carpeta)
+        gris = QtGui.QImage(64, 64, QtGui.QImage.Format.Format_Grayscale8)
+        gris.fill(QtGui.QColor(128, 128, 128))
+        origen = os.path.join(carpeta, "detalle.jpg")
+        self.assertTrue(gris.save(origen, "JPG", 95))
+        self.assertEqual(exportar.nombre_color("hoja_hiedra", alfa=True), "hoja_hiedra_color.png")
+        destino = os.path.join(carpeta, exportar.nombre_color("hoja_hiedra", alfa=True))
+        self.assertTrue(exportar.guardar_color(origen, destino, (0.05, 0.2, 0.02), forma="hiedra"))
+        color = QtGui.QImage(destino)
+        self.assertTrue(color.hasAlphaChannel())
+        self.assertEqual(color.pixelColor(32, 32).alpha(), 255)
+        self.assertEqual(color.pixelColor(0, 0).alpha(), 0)
+
+
 class PruebasArchivos(unittest.TestCase):
     def test_nombres(self):
         self.assertEqual(exportar.carpeta_texturas(os.path.join("a", "mi planta.fbx")),

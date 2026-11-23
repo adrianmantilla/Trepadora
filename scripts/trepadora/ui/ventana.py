@@ -468,10 +468,18 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         self.boton_malla.setMinimumHeight(36)
         self.boton_malla.setToolTip(t("ayuda_crear_malla"))
         self.boton_malla.clicked.connect(self._crear_malla)
-        self.boton_exportar = QtWidgets.QPushButton(t("exportar"))
+        # Clic: exportar con las hojas completas. La flecha ofrece además
+        # las hojas ligeras, para juegos.
+        self.boton_exportar = QtWidgets.QToolButton()
+        self.boton_exportar.setText(t("exportar"))
         self.boton_exportar.setMinimumHeight(36)
         self.boton_exportar.setToolTip(t("ayuda_exportar"))
-        self.boton_exportar.clicked.connect(self._exportar)
+        self.boton_exportar.setPopupMode(QtWidgets.QToolButton.MenuButtonPopup)
+        self.boton_exportar.clicked.connect(lambda: self._exportar())
+        menu = QtWidgets.QMenu(self.boton_exportar)
+        menu.addAction(t("exportar_completas"), lambda: self._exportar())
+        menu.addAction(t("exportar_ligeras"), lambda: self._exportar(ligeras=True))
+        self.boton_exportar.setMenu(menu)
         self.estado_pie = QtWidgets.QLabel()
         self.estado_pie.setWordWrap(True)
         fila.addWidget(self.boton_malla, 1)
@@ -699,7 +707,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         elif resultado is not None:
             self.avisar(t("malla_cancelada"))
 
-    def _exportar(self):
+    def _exportar(self, ligeras=False):
         if self.sesion.planta_para_exportar() is None:
             self.avisar(t("sin_planta_seleccionada"))
             return
@@ -708,7 +716,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
             return
         self._ultima_exportacion = ruta
         try:
-            informe = self._hacer(self.sesion.exportar, ruta)
+            informe = self._hacer(self.sesion.exportar, ruta, ligeras)
         except (RuntimeError, OSError) as error:
             # Lo que diga Maya o el sistema (sin permiso para escribir, sin
             # el plug-in de FBX...) se enseña como aviso, no como un error de Python.
@@ -716,9 +724,13 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
             return
         if informe is None:
             return
-        self.avisar(t("exportado", archivo=os.path.basename(informe["ruta"]),
-                      n=len(informe["texturas"]),
-                      carpeta=os.path.basename(informe["carpeta"])), aviso=False)
+        texto = t("exportado", archivo=os.path.basename(informe["ruta"]),
+                  n=len(informe["texturas"]), carpeta=os.path.basename(informe["carpeta"]))
+        if ligeras and informe.get("ligeras"):
+            texto += " " + t("exportado_ligeras", n=_numero(informe["hojas_vertices"]))
+        self.avisar(texto, aviso=False)
+        if ligeras and not informe.get("ligeras"):
+            self.avisar(texto + " " + t("exportado_sin_ligeras"))
         if informe["sin_color"]:
             self.avisar(t("exportado_sin_color", juegos=", ".join(informe["sin_color"])))
 

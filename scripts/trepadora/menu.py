@@ -35,6 +35,8 @@ def crear():
     cmds.menuItem(divider=True)
     cmds.menuItem(label=t("menu_exportar"), annotation=t("ayuda_menu_exportar"),
                   command=lambda *_: exportar_seleccion())
+    cmds.menuItem(label=t("menu_exportar_ligeras"), annotation=t("ayuda_menu_exportar_ligeras"),
+                  command=lambda *_: exportar_seleccion(ligeras=True))
     cmds.menuItem(divider=True)
     cmds.menuItem(label=t("menu_acerca"), command=lambda *_: acerca_de())
 
@@ -73,8 +75,11 @@ def escena_de_prueba(nombre):
     return ventana
 
 
-def exportar_seleccion():
-    """Pide dónde guardar la planta seleccionada y la exporta (FBX o Alembic)."""
+def exportar_seleccion(ligeras=False):
+    """Pide dónde guardar la planta seleccionada y la exporta (FBX o Alembic).
+
+    Con ``ligeras``, las hojas van como tarjetas con transparencia (juegos).
+    """
     from . import exportar, texturas
     from .ajustes import Aviso
 
@@ -86,7 +91,8 @@ def exportar_seleccion():
     if not rutas:
         return None
     try:
-        informe = exportar.exportar(rutas[0], resolucion=texturas.resolucion_actual())
+        informe = exportar.exportar(rutas[0], resolucion=texturas.resolucion_actual(),
+                                    ligeras=ligeras)
     except Aviso as aviso:
         cmds.warning(str(aviso))
         return None
@@ -95,6 +101,11 @@ def exportar_seleccion():
         return None
     print(t("exportado", archivo=os.path.basename(informe["ruta"]), n=len(informe["texturas"]),
             carpeta=os.path.basename(informe["carpeta"])))
+    if ligeras:
+        if informe.get("ligeras"):
+            print(t("exportado_ligeras", n=informe["hojas_vertices"]))
+        else:
+            cmds.warning(t("exportado_sin_ligeras"))
     if informe["sin_color"]:
         cmds.warning(t("exportado_sin_color", juegos=", ".join(informe["sin_color"])))
     return informe

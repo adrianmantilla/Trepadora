@@ -705,12 +705,15 @@ class Sesion:
             planta = exportar.planta_de()
         return planta
 
-    def exportar(self, ruta):
-        """Exporta la planta (ver ``planta_para_exportar``) a ``ruta``; devuelve el informe."""
+    def exportar(self, ruta, ligeras=False):
+        """Exporta la planta (ver ``planta_para_exportar``) a ``ruta``; devuelve el informe.
+
+        Con ``ligeras``, las hojas van como tarjetas con transparencia (juegos).
+        """
         planta = self.planta_para_exportar()
         if planta is None:
             raise Aviso(t("sin_planta_seleccionada"))
-        return exportar.exportar(ruta, planta, texturas.resolucion_actual())
+        return exportar.exportar(ruta, planta, texturas.resolucion_actual(), ligeras)
 
     # ------------------------------------------------------------ texturas
     def resolucion_texturas(self):
