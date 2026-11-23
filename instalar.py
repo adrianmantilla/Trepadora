@@ -111,8 +111,7 @@ def instalar(carpeta_modulos=None, estante=True, abrir=True, dialogo=True):
     apuntar("modulo")
     plugin = os.path.join(RAIZ, "plug-ins", PLUGIN + ".py")
     _descargar_plugin(cmds)
-    cmds.loadPlugin(plugin)
-    cmds.pluginInfo(plugin, edit=True, autoload=True)
+    cargado = _cargar_plugin(cmds, plugin, t)
     apuntar("plugin")
     if not cmds.about(batch=True):
         from trepadora import menu
@@ -129,9 +128,34 @@ def instalar(carpeta_modulos=None, estante=True, abrir=True, dialogo=True):
     apuntar("preferencias")
     if dialogo and not cmds.about(batch=True):
         cmds.confirmDialog(title=t("ventana_titulo"),
-                           message=t("instalado", carpeta=RAIZ, mod=ruta_mod),
+                           message=t("instalado" if cargado else "instalado_sin_plugin",
+                                     carpeta=RAIZ, mod=ruta_mod),
                            button=[t("boton_aceptar")])
-    return {"mod": ruta_mod, "plugin": plugin, "version": version(), "segundos": tiempos}
+    return {"mod": ruta_mod, "plugin": plugin, "version": version(), "plugin_cargado": cargado,
+            "segundos": tiempos}
+
+
+def _cargar_plugin(cmds, plugin, t):
+    """Carga el plug-in y lo marca para que se cargue solo. Devuelve si quedó cargado.
+
+    Si Maya no puede cargarlo, la ventana y el estante funcionan igual; se avisa
+    en vez de dar la instalación por buena. Se marca igualmente para que Maya lo
+    intente otra vez al arrancar.
+    """
+    import traceback
+
+    try:
+        cmds.loadPlugin(plugin)
+    except RuntimeError:
+        traceback.print_exc()
+    cargado = bool(cmds.pluginInfo(PLUGIN, query=True, loaded=True))
+    try:
+        cmds.pluginInfo(plugin, edit=True, autoload=True)
+    except RuntimeError:
+        traceback.print_exc()
+    if not cargado:
+        cmds.warning(t("aviso_plugin_no_cargado", ruta=plugin))
+    return cargado
 
 
 def _descargar_plugin(cmds):

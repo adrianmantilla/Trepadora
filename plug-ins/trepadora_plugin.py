@@ -53,6 +53,11 @@ class _PasoDeshacer(om.MPxCommand):
         return True
 
     @staticmethod
+    def crear():
+        """Lo llama Maya cada vez que se ejecuta el comando."""
+        return _PasoDeshacer()
+
+    @staticmethod
     def _llamar(funcion):
         try:
             funcion()
@@ -64,7 +69,7 @@ def initializePlugin(objeto):
     from trepadora import __version__
 
     plugin = om.MFnPlugin(objeto, "Trepadora", __version__)
-    plugin.registerCommand(COMANDO_DESHACER, _PasoDeshacer)
+    plugin.registerCommand(COMANDO_DESHACER, _PasoDeshacer.crear)
     if not cmds.about(batch=True):
         from trepadora import menu
 

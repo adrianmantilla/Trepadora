@@ -497,6 +497,18 @@ def _escribir(nombre):
         json.dump(_informe, f, ensure_ascii=False, indent=1, default=str)
 
 
+def _como_un_clic(funcion):
+    """Ejecuta ``funcion`` desde Qt, como un clic de verdad en la ventana.
+
+    Lo que se ejecuta con evalDeferred queda en el historial como un solo paso
+    (con el nombre de la función), y un Ctrl+Z dentro desharía el paso anterior
+    entero; desde Qt cada orden de Maya va a su sitio, igual que al pulsar botones.
+    """
+    from PySide6 import QtCore
+
+    QtCore.QTimer.singleShot(0, funcion)
+
+
 def probar_y_salir():
     """Cada paso se ejecuta cuando Maya ha atendido lo que dejó pendiente el anterior
     (avisos de escena nueva, de deshacer...), como cuando un estudiante pulsa botones."""
@@ -524,11 +536,12 @@ def probar_y_salir():
             _informe["errores"]["general"] = traceback.format_exc()
             salir()
             return
-        cmds.evalDeferred(lambda: siguiente(i + 1), lowestPriority=True)
+        cmds.evalDeferred(lambda: _como_un_clic(lambda: siguiente(i + 1)), lowestPriority=True)
 
     _datos_generales()
     # Cuando Maya haya terminado de arrancar y de dibujar su ventana.
-    cmds.evalDeferred(lambda: cmds.evalDeferred(lambda: siguiente(0), lowestPriority=True),
+    cmds.evalDeferred(lambda: cmds.evalDeferred(lambda: _como_un_clic(lambda: siguiente(0)),
+                                                lowestPriority=True),
                       lowestPriority=True)
 
 
