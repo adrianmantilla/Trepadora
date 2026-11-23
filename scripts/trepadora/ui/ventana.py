@@ -983,8 +983,12 @@ def _valida(widget):
         return False
 
 
-def mostrar(restaurar=False):
-    """Abre la ventana (o la trae delante si ya estaba abierta) y la devuelve."""
+def mostrar(restaurar=False, sesion=None):
+    """Abre la ventana (o la trae delante si ya estaba abierta) y la devuelve.
+
+    ``sesion``: la de una ventana anterior (al cambiar de idioma), para seguir
+    con la planta que estaba creciendo.
+    """
     global _ventana
     if restaurar:
         # Maya vuelve a crear el panel acoplado al arrancar (ver uiScript).
@@ -1002,7 +1006,7 @@ def mostrar(restaurar=False):
             cmds.workspaceControl(CONTROL, edit=True, visible=True)
             return _ventana
         cmds.deleteUI(CONTROL)
-    _ventana = Ventana()
+    _ventana = Ventana(sesion=sesion)
     _ventana.show(dockable=True, floating=True, area="right", retain=False, width=380,
                   height=820, uiScript="import trepadora.ui.ventana as v\nv.mostrar(restaurar=True)")
     _ventana.conectar_maya()

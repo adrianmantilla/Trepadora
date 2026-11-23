@@ -5,11 +5,13 @@ import os
 from maya import cmds, mel
 
 from . import __version__
-from .i18n import t, usar_idioma
+from .i18n import idioma, t, usar_idioma
 
 MENU = "trepadoraMenu"
 OPCION_IDIOMA = "trepadoraIdioma"
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Cada idioma se nombra en su propia lengua.
+NOMBRES_IDIOMA = {"es": "Español", "en": "English"}
 
 
 def idioma_guardado():
@@ -38,7 +40,37 @@ def crear():
     cmds.menuItem(label=t("menu_exportar_ligeras"), annotation=t("ayuda_menu_exportar_ligeras"),
                   command=lambda *_: exportar_seleccion(ligeras=True))
     cmds.menuItem(divider=True)
+    cmds.menuItem(label=t("menu_idioma"), subMenu=True)
+    cmds.radioMenuItemCollection()
+    for codigo in idiomas_del_menu():
+        cmds.menuItem(label=NOMBRES_IDIOMA.get(codigo, codigo), radioButton=codigo == idioma(),
+                      command=lambda *_, c=codigo: cambiar_idioma(c))
+    cmds.setParent("..", menu=True)
     cmds.menuItem(label=t("menu_acerca"), command=lambda *_: acerca_de())
+
+
+def idiomas_del_menu():
+    from .i18n import idiomas
+
+    return idiomas()
+
+
+def cambiar_idioma(codigo):
+    """Cambia el idioma de Trepadora, lo recuerda y rehace el menú y la ventana."""
+    cmds.optionVar(stringValue=(OPCION_IDIOMA, codigo))
+    usar_idioma(codigo)
+    from .ui import ventana
+
+    anterior = ventana._ventana
+    abierta = anterior is not None and ventana._valida(anterior)
+    sesion = anterior.sesion if abierta else None
+    if abierta:
+        ventana.cerrar()
+    # El menú no se puede borrar mientras se ejecuta una de sus órdenes.
+    cmds.evalDeferred(crear)
+    if abierta:
+        cmds.evalDeferred(lambda: ventana.mostrar(sesion=sesion))
+    print(t("idioma_cambiado"))
 
 
 def borrar():

@@ -198,6 +198,27 @@ class PruebasVentana(unittest.TestCase):
         v.boton_reiniciar.click()
         self.assertFalse(v.boton_recortar.isEnabled())
 
+    def test_en_ingles(self):
+        from trepadora import i18n
+
+        i18n.usar_idioma("en")
+        try:
+            v = self.modulo.Ventana(sesion=SesionFalsa())
+            v.show()
+            self.assertEqual(v.boton_crecer.text(), "Grow")
+            self.assertEqual(v.boton_recortar.text(), "Prune branches")
+            v.boton_superficie.click()
+            v.boton_zonas.click()
+            self.assertEqual(v.estado_zonas.text(), "3 zones")
+            textos = [w.text() for w in v.findChildren(QtWidgets.QLabel)]
+            textos += [w.text() for w in v.findChildren(QtWidgets.QAbstractButton)]
+            self.assertEqual([x for x in textos if re.fullmatch(r"[a-z]+(_[a-z0-9]+)+", x or "")],
+                             [])
+            v.close()
+            v.deleteLater()
+        finally:
+            i18n.usar_idioma("es")
+
     def test_zonas_prohibidas_y_curva_guia(self):
         v = self.v
         self.assertFalse(v.boton_quitar_zonas.isEnabled())

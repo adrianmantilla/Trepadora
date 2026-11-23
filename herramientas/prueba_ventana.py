@@ -775,6 +775,196 @@ def exportar(v):
     return datos
 
 
+def exportar_ligeras(v):
+    """Exporta la ruina para juegos (hojas ligeras): tarjetas y PNG con la silueta."""
+    from PySide6 import QtGui
+
+    from trepadora import exportar as ex
+
+    carpeta = os.path.join(_SALIDA, "exportar prueba ñ")
+    ruta = os.path.join(carpeta, "planta ruina juegos.fbx")
+    cmds.select(clear=True)
+    v._pedir_ruta_exportar = lambda: ruta
+    inicio = time.time()
+    try:
+        v._exportar(ligeras=True)
+    finally:
+        del v._pedir_ruta_exportar
+    _procesar()
+    d = {"segundos": round(time.time() - inicio, 2), "mensaje": v.mensaje.text(),
+         "existe": os.path.isfile(ruta)}
+    if d["existe"]:
+        d["mb"] = round(os.path.getsize(ruta) / 1e6, 2)
+        texturas_dir = ex.carpeta_texturas(ruta)
+        d["texturas"] = sorted(os.listdir(texturas_dir))
+        with open(os.path.join(texturas_dir, "trepadora_exportar.json"), encoding="utf-8") as f:
+            informe = json.load(f)
+        d["informe"] = {k: informe.get(k) for k in ("ligeras", "hojas_vertices",
+                                                    "tallos_vertices", "juego_hojas")}
+        png = os.path.join(texturas_dir, ex.nombre_color(informe.get("juego_hojas") or "",
+                                                         alfa=True))
+        imagen = QtGui.QImage(png)
+        if not imagen.isNull():
+            w, h = imagen.width(), imagen.height()
+            d["png"] = {"tamano": [w, h], "alfa": imagen.hasAlphaChannel(),
+                        "alfa_centro": imagen.pixelColor(w // 2, h // 2).alpha(),
+                        "alfa_esquina": imagen.pixelColor(2, 2).alpha()}
+        d["reimportado"] = _reimportar(ruta, "fbx")
+    return d
+
+
+def zonas_y_guia(v):
+    """Una caja girada tapa una «ventana» (zona prohibida, oculta) y una curva guía cruza el muro."""
+    from trepadora import exportar as ex
+    from trepadora import superficie_maya
+
+    cmds.file(new=True, force=True)
+    _procesar()
+    v.escena_de_prueba("sencilla")
+    caja = cmds.polyCube(name="ventana_zona", width=60, height=60, depth=14)[0]
+    cmds.move(-20, 75, 5, caja)
+    cmds.rotate(0, 0, 10, caja)
+    cmds.select(caja, replace=True)
+    v._usar_zonas()
+    cmds.hide(caja)
+    curva = cmds.curve(degree=3, editPoint=[(-90, 20, 6), (-30, 32, 6), (30, 24, 6),
+                                            (90, 36, 6)], name="guia_muro")
+    cmds.select(curva, replace=True)
+    v._usar_guias()
+    cmds.select(clear=True)
+    v.boton_quitar.click()
+    v.controles["pasos"].casilla.setValue(260)
+    v.boton_crecer.click()
+    c = v.sesion._crecimiento
+    zona = superficie_maya.zona_de((cmds.ls(caja, long=True) or [caja])[0])
+    puntos = [q for r in c.ramas for q in r.puntos]
+    datos = {"zonas": v.sesion.zonas, "guias": v.sesion.guias,
+             "estado_zonas": v.estado_zonas.text(), "estado_guia": v.estado_guia.text(),
+             "estado_origen": v.estado_origen.text(), "mensaje": v.mensaje.text(),
+             "zona": {"centro": _redondear(zona.centro), "medias": _redondear(zona.medias),
+                      "eje_x": _redondear(zona.ejes[0], 3)},
+             "puntos": len(puntos), "puntos_en_zona": sum(1 for q in puntos if zona.dentro(q)),
+             "inicio": _redondear(c.ramas[0].puntos[0]),
+             "x_max_tallo": round(max(q[0] for q in c.ramas[0].puntos), 1),
+             "al_dia": v.sesion.al_dia()}
+    cmds.move(-20, 85, 5, caja)
+    datos["al_dia_tras_mover_caja"] = v.sesion.al_dia()
+    cmds.move(-20, 75, 5, caja)
+    datos["al_dia_tras_devolver"] = v.sesion.al_dia()
+    v.boton_malla.click()
+    planta = v.sesion.ultima_planta
+    hojas, _ = ex.hojas_de(planta)
+    datos["vertices_hoja"] = len(hojas.vertices)
+    datos["vertices_hoja_en_zona"] = sum(1 for p in hojas.vertices if zona.dentro(p))
+    datos["mensaje_malla"] = v.mensaje.text()
+    _vista((0, 80, 330), (0, 70, 0))
+    cmds.showHidden(caja)
+    cmds.setAttr(caja + ".overrideEnabled", 1)
+    cmds.setAttr(caja + ".overrideShading", 0)
+    datos["visor"] = _captura_visor("8_zona_y_guia")
+    datos["captura"] = _captura_ventana(v, "8_zona_y_guia")
+    return datos
+
+
+def recortar(v):
+    """Recorta el tallo con un clic de verdad en el visor; después Ctrl+Z y rehacer."""
+    import maya.api.OpenMaya as om
+    import maya.api.OpenMayaUI as omui
+    from PySide6 import QtWidgets
+    from shiboken6 import wrapInstance
+
+    cmds.file(new=True, force=True)
+    _procesar()
+    v.escena_de_prueba("sencilla")
+    v.controles["pasos"].casilla.setValue(220)
+    v.boton_crecer.click()
+    panel = _vista((0, 80, 330), (0, 70, 0))
+    vista = omui.M3dView.getM3dViewFromModelPanel(panel)
+    c = v.sesion._crecimiento
+    tronco = c.ramas[0]
+    k = len(tronco.puntos) // 2
+    x, y, dentro = vista.worldToView(om.MPoint(*tronco.puntos[k]))
+    datos = {"pixel": [x, y, dentro], "total": c.total_puntos, "ramas": len(c.ramas),
+             "k": k, "largo_tronco": len(tronco.puntos)}
+    datos["visor_antes"] = _captura_visor("9_recortar_antes")
+    v.boton_recortar.click()
+    datos["herramienta"] = cmds.currentCtx()
+    widget = wrapInstance(int(vista.widget()), QtWidgets.QWidget)
+    inicio = time.time()
+    datos["clic"] = _clic_qt(widget, x, y)
+    datos["clic_s"] = round(time.time() - inicio, 2)
+    c = v.sesion._crecimiento
+    datos["tras_recortar"] = {"total": c.total_puntos, "ramas": len(c.ramas),
+                              "largo_tronco": len(c.ramas[0].puntos),
+                              "motivo_tronco": c.ramas[0].motivo}
+    datos["mensaje"] = v.mensaje.text()
+    datos["visor"] = _captura_visor("9_recortar_despues")
+    cmds.undo()
+    _procesar()
+    datos["tras_deshacer"] = v.sesion._crecimiento.total_puntos
+    cmds.redo()
+    _procesar()
+    datos["tras_rehacer"] = v.sesion._crecimiento.total_puntos
+    v.boton_recortar.click()
+    datos["herramienta_despues"] = cmds.currentCtx()
+    v.boton_malla.click()
+    datos["malla"] = _resumen_sesion(v)
+    return datos
+
+
+def raices(v):
+    """Raíces adhesivas: la malla de los tallos con 0 y con 1, y una foto de cerca."""
+    from trepadora import exportar as ex
+
+    cmds.file(new=True, force=True)
+    _procesar()
+    v.escena_de_prueba("sencilla")
+    v.controles["pasos"].casilla.setValue(200)
+    datos = {}
+    for valor in (0.0, 1.0):
+        v.controles["raices"].casilla.setValue(valor)
+        v.boton_malla.click()
+        planta = v.sesion.ultima_planta
+        tallos = ex._hijo(planta, "trepadora_tallos", "transform")
+        datos["vertices_tallos_{}".format(valor)] = cmds.polyEvaluate(tallos, vertex=True)
+        if valor == 0.0:
+            cmds.delete(planta)
+    q = v.sesion._crecimiento.ramas[0].puntos[25]
+    _vista((q[0] + 14, q[1] + 4, q[2] + 30), q, 24)
+    datos["visor"] = _captura_visor("10_raices")
+    v.controles["raices"].casilla.setValue(0.5)
+    return datos
+
+
+def idioma_en(v):
+    """Cambia a inglés desde el menú Trepadora (el menú y la ventana se rehacen después)."""
+    from trepadora import menu
+
+    v.controles["pasos"].casilla.setValue(123)
+    menu.cambiar_idioma("en")
+    return {"opcion": cmds.optionVar(query=menu.OPCION_IDIOMA)}
+
+
+def _textos_ventana_y_menu(v):
+    from trepadora import menu
+
+    elementos = cmds.menu(menu.MENU, query=True, itemArray=True) or []
+    return {"crecer": v.boton_crecer.text(), "superficie": v.boton_superficie.text(),
+            "pasos": v.controles["pasos"].valor(),
+            "menu": [cmds.menuItem(e, query=True, label=True) for e in elementos
+                     if not cmds.menuItem(e, query=True, divider=True)]}
+
+
+def idioma_en_visto(v):
+    """En inglés: textos de la ventana y del menú; el tamaño elegido sigue ahí. Vuelve al español."""
+    from trepadora import menu
+
+    datos = _textos_ventana_y_menu(v)
+    datos["captura"] = _captura_ventana(v, "11_ingles")
+    menu.cambiar_idioma("es")
+    return datos
+
+
 def recargar_plugin():
     import instalar
     from trepadora import menu
@@ -863,6 +1053,13 @@ def _pasos():
         ("ruina", lambda: ruina(_v())),
         ("texturas", lambda: texturas(_v())),
         ("exportar", lambda: exportar(_v())),
+        ("exportar_ligeras", lambda: exportar_ligeras(_v())),
+        ("zonas_y_guia", lambda: zonas_y_guia(_v())),
+        ("recortar", lambda: recortar(_v())),
+        ("raices", lambda: raices(_v())),
+        ("idioma_en", lambda: idioma_en(_v())),
+        ("idioma_en_visto", lambda: idioma_en_visto(_v())),
+        ("idioma_es_visto", lambda: _textos_ventana_y_menu(_v())),
         # Antes de recargar el plug-in: al descargarlo se cierra la ventana.
         ("ajustes_al_salir", _ajustes_al_salir),
         ("recargar_plugin", recargar_plugin),

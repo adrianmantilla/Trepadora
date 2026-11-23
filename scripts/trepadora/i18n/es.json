@@ -7,6 +7,8 @@
   "menu_escena_sencilla": "Escena de prueba: muro y caja",
   "menu_escena_ruina": "Escena de prueba: ruina",
   "ayuda_menu_escena": "Crea una escena nueva lista para pulsar Crecer.",
+  "menu_idioma": "Idioma / Language",
+  "idioma_cambiado": "Trepadora: interfaz en español.",
   "menu_acerca": "Acerca de Trepadora",
   "acerca_texto": "Trepadora {version}\nGenerador de plantas trepadoras para Maya.\n\nCarpeta: {carpeta}",
   "confirmar_escena_nueva": "La escena tiene cambios sin guardar. ¿Quieres guardarlos antes de abrir la escena de prueba?",
