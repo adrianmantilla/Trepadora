@@ -6,6 +6,9 @@ Uso en el Script Editor de Maya (pestaña Python)::
     tp.escena_de_prueba()               # opcional: crea un muro y una caja y hace crecer
     tp.ejecutar(semilla=3)              # usa la seleccion actual
     tp.ejecutar(semilla=3, modo="curvas")   # solo lineas, muy rapido
+    tp.ejecutar(semilla=3, forma_hoja="corazon", tipo_tallo="verde")
+    tp.ejecutar(semilla=3, hoja_propia="miHoja")   # una hoja modelada por ti
+    tp.ejecutar(semilla=3, instancias=False)       # todas las hojas en una malla
 
 Selecciona una o varias mallas y, si quieres, uno o varios localizadores para
 marcar donde nace cada planta. Sin localizadores, la planta nace en la base del
@@ -62,10 +65,20 @@ def _parametros_para(mallas, ajustes, paso=None):
     return Parametros(**base), (xmin, ymin, zmin, xmax, ymax, zmax), paso
 
 
-def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, paso=None, **ajustes):
+def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, paso=None,
+             instancias=True, forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None,
+             **ajustes):
     """Hace crecer la planta sobre la seleccion.
 
     * ``modo="malla"`` crea tallos con grosor y hojas; ``modo="curvas"`` solo lineas.
+    * ``instancias``: las hojas son instancias de unas pocas hojas modelo (la
+      escena pesa mucho menos). Con False, todas las hojas van en una malla,
+      por ejemplo para exportarla.
+    * ``forma_hoja``: "hiedra", "corazon", "alargada" o "redonda".
+    * ``tipo_tallo``: "lenoso", "nudoso", "verde" o "rojizo".
+    * ``hoja_propia``: nombre de una malla de la escena que se usa como hoja
+      (siempre con instancias). Modélala con la base en el origen, la punta
+      hacia +Y y la cara hacia +Z; el tamaño se ajusta solo.
     * ``hojas``: diccionario con ajustes de ``ParametrosHojas`` (densidad, tamano...).
       El tamano es relativo: 1.0 = tamano por defecto para la escena.
     * ``grosor``: multiplica el grosor de los tallos.
@@ -118,7 +131,9 @@ def ejecutar(semilla=1, pasos=None, modo="malla", hojas=None, grosor=1.0, paso=N
         if modo == "curvas":
             grupo = crear_vista_previa(crecimiento.curvas())
         else:
-            grupo = crear_planta(crecimiento, paso_escena, hojas or {}, grosor, semilla)
+            grupo = crear_planta(crecimiento, paso_escena, hojas or {}, grosor, semilla,
+                                 instancias=instancias, forma_hoja=forma_hoja,
+                                 tipo_tallo=tipo_tallo, hoja_propia=hoja_propia)
     finally:
         cmds.progressWindow(endProgress=True)
         cmds.undoInfo(closeChunk=True)
@@ -146,8 +161,25 @@ def crear_vista_previa(curvas):
     return grupo
 
 
-def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1):
-    """Crea las mallas de tallos, hojas y rabillos dentro de un grupo nuevo."""
+def _elegir(valor, opciones, por_defecto, clave_aviso, **datos):
+    """``valor`` si está entre ``opciones``; si no, avisa y devuelve ``por_defecto``."""
+    if valor in opciones:
+        return valor
+    cmds.warning(t(clave_aviso, opciones=", ".join(opciones), **datos))
+    return por_defecto
+
+
+def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instancias=True,
+                 forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None):
+    """Crea tallos, hojas y rabillos dentro de un grupo nuevo (ver ``ejecutar``)."""
+    forma_hoja = _elegir(forma_hoja, geometria.FORMAS_HOJA, "hiedra", "forma_desconocida",
+                         forma=forma_hoja)
+    tipo_tallo = _elegir(tipo_tallo, tuple(geometria.TIPOS_TALLO), "lenoso",
+                         "tallo_desconocido", tipo=tipo_tallo)
+    if hoja_propia and not instancias:
+        cmds.warning(t("hoja_propia_sin_instancias"))
+        instancias = True
+    grosor *= geometria.TIPOS_TALLO[tipo_tallo]["grosor"]
     radios = crecimiento.grosores(paso * 0.45 * grosor, paso * 0.06 * grosor)
     datos_hojas = dict(ajustes_hojas)
     datos_hojas["tamano"] = paso * 2.4 * datos_hojas.get("tamano", 1.0)
@@ -156,11 +188,22 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1):
 
     grupo = cmds.group(empty=True, name=GRUPO_PLANTA)
     piezas = [
-        ("trepadora_tallos", geometria.malla_tallos(crecimiento, radios, semilla=semilla),
+        ("trepadora_tallos",
+         geometria.malla_tallos(crecimiento, radios, semilla=semilla, tipo=tipo_tallo),
          (0.30, 0.21, 0.13)),
-        ("trepadora_hojas", geometria.malla_hojas(hojas, semilla=semilla), (0.16, 0.38, 0.10)),
-        ("trepadora_rabillos", geometria.malla_peciolos(hojas), (0.25, 0.33, 0.12)),
+        ("trepadora_rabillos", geometria.malla_peciolos(hojas, tipo=tipo_tallo),
+         (0.25, 0.33, 0.12)),
     ]
+    modelos = 0
+    if instancias and hojas:
+        try:
+            modelos = _crear_hojas_instanciadas(hojas, grupo, forma_hoja, semilla, hoja_propia)
+        except RuntimeError as error:
+            cmds.warning(t("sin_instancias", error=error))
+    if not modelos:
+        piezas.insert(1, ("trepadora_hojas",
+                          geometria.malla_hojas(hojas, semilla=semilla, forma=forma_hoja),
+                          (0.16, 0.38, 0.10)))
     for nombre, malla, color in piezas:
         if not malla.conteos:
             continue
@@ -169,8 +212,133 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1):
         sombreado = _asignar_material(transform, nombre + "_mat", color, brillo)
         _material_arnold(transform, sombreado, nombre, color, brillo)
         cmds.parent(transform, grupo)
-    print("Trepadora: {} hojas.".format(len(hojas)))
+    if modelos:
+        print(t("resumen_instancias", hojas=len(hojas), modelos=modelos))
+    else:
+        print(t("resumen_malla", hojas=len(hojas)))
     return grupo
+
+
+# Color de las hojas modelo en el material del visor (el de cada hoja va en
+# sus colores de vértice).
+_COLOR_HOJAS = (0.16, 0.38, 0.10)
+
+
+def _crear_hojas_instanciadas(hojas, grupo, forma, semilla, hoja_propia=None):
+    """Hojas modelo ocultas, una partícula por hoja y un instanciador.
+
+    Cada partícula lleva el giro, la escala y el modelo de su hoja, y en rgbPP
+    la proporción entre el color de la hoja y el de su modelo: Arnold la lee y
+    multiplica, así cada hoja sale de su color aunque comparta modelo.
+    Devuelve el número de modelos, o 0 si no se pudo.
+    """
+    from . import instancias
+
+    datos = instancias.hojas_instanciadas(hojas, forma=forma, semilla=semilla)
+    lineal = _con_gestion_de_color()
+
+    def a_lineal(c):
+        return _a_lineal(c, lineal, _BRILLO_HOJAS)
+
+    modelos_grp = _largo(cmds.group(empty=True, name="trepadora_hojas_modelos", parent=grupo))
+    try:
+        return _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal)
+    except RuntimeError:
+        # Sin restos a medias: se borra lo creado y crear_planta hace la malla.
+        restos = [modelos_grp] + (cmds.listRelatives(grupo, children=True, fullPath=True,
+                                                     type="transform") or [])
+        cmds.delete([r for r in restos if cmds.objExists(r) and "trepadora_hojas" in r])
+        raise
+
+
+def _largo(nombre):
+    """Ruta completa de un nodo recién creado o movido (Maya da la más corta que no se repite)."""
+    return (cmds.ls(nombre, long=True) or [nombre])[0]
+
+
+def _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal):
+    from . import instancias
+
+    propia = _modelo_propio(hoja_propia, modelos_grp) if hoja_propia else None
+    if propia:
+        modelos, indices = [propia], [0.0] * len(datos)
+        proporciones = [(1.0, 1.0, 1.0)] * len(datos)
+    else:
+        modelos = []
+        for i, modelo in enumerate(datos.modelos):
+            transform = _crear_malla("trepadora_hoja_modelo{}".format(i + 1), modelo.malla,
+                                     _BRILLO_HOJAS)
+            sombreado = _asignar_material(transform, "trepadora_hojas_inst_mat", _COLOR_HOJAS,
+                                          _BRILLO_HOJAS)
+            _material_arnold(transform, sombreado, "trepadora_hojas_inst", _COLOR_HOJAS,
+                             _BRILLO_HOJAS, clave="trepadora_hojas", por_instancia=True)
+            modelos.append(_largo(cmds.parent(transform, modelos_grp)[0]))
+        indices = [float(i) for i in datos.indices]
+        proporciones = [instancias.proporcion(c, datos.modelos[i].color, a_lineal)
+                        for c, i in zip(datos.colores, datos.indices)]
+    cmds.setAttr(modelos_grp + ".visibility", 0)
+    _instanciador("trepadora_hojas", grupo, modelos, datos, indices, proporciones)
+    return len(modelos)
+
+
+def _modelo_propio(nombre, padre):
+    """Copia de la hoja del alumno, de largo 1, lista para instanciar (o None)."""
+    if not cmds.objExists(nombre) or not _es_malla(nombre):
+        cmds.warning(t("sin_hoja_propia", nombre=nombre))
+        return None
+    copia = cmds.duplicate(nombre, name="trepadora_hoja_propia")[0]
+    copia = _largo(cmds.parent(copia, padre)[0])
+    # Se queda con la forma tal como se modeló, sin la posición del objeto.
+    cmds.xform(copia, matrix=[1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0])
+    caja = cmds.exactWorldBoundingBox(copia)
+    largo = caja[4]
+    if largo <= 1e-6 or caja[1] < -0.5 * largo:
+        cmds.warning(t("hoja_propia_eje", nombre=nombre))
+        largo = max(caja[4] - caja[1], 1e-6)
+    cmds.setAttr(copia + ".scale", 1.0 / largo, 1.0 / largo, 1.0 / largo, type="double3")
+    return copia
+
+
+def _instanciador(nombre, grupo, modelos, datos, indices, proporciones):
+    """Partículas quietas, una por hoja, y el instanciador que pone en ellas los modelos."""
+    n = len(datos)
+    particula, forma = (_largo(x) for x in cmds.particle(
+        position=[tuple(p) for p in datos.posiciones], name=nombre + "_puntos"))
+    for atributo, tipo in (("giroPP", "vectorArray"), ("escalaPP", "vectorArray"),
+                           ("rgbPP", "vectorArray"), ("modeloPP", "doubleArray")):
+        for nombre_pp in (atributo, atributo + "0"):
+            if not cmds.attributeQuery(nombre_pp, node=forma, exists=True):
+                cmds.addAttr(forma, longName=nombre_pp, dataType=tipo)
+            if tipo == "doubleArray":
+                cmds.setAttr(forma + "." + nombre_pp, indices, type=tipo)
+            else:
+                valores = {"giroPP": datos.giros, "escalaPP": datos.escalas,
+                           "rgbPP": proporciones}[atributo]
+                cmds.setAttr(forma + "." + nombre_pp, n, *valores, type=tipo)
+    # Quietas: no son una simulación, solo marcan dónde va cada hoja.
+    cmds.setAttr(forma + ".isDynamic", 0)
+    cmds.saveInitialState(forma)
+    # Que no se rendericen como puntos ni ensucien el visor.
+    for atributo in ("primaryVisibility", "castsShadows", "receiveShadows",
+                     "visibleInReflections", "visibleInRefractions"):
+        if cmds.attributeQuery(atributo, node=forma, exists=True):
+            cmds.setAttr(forma + "." + atributo, 0)
+    if cmds.attributeQuery("aiExportAttributes", node=forma, exists=True):
+        cmds.setAttr(forma + ".aiExportAttributes", "rgbPP", type="string")
+    instanciador = cmds.particleInstancer(
+        forma, addObject=True, object=modelos, cycle="None", levelOfDetail="Geometry",
+        rotationUnits="Degrees", rotationOrder="XYZ", position="position",
+        rotation="giroPP", scale="escalaPP", objectIndex="modeloPP", name=nombre + "_instancias")
+    particula = _largo(cmds.parent(particula, grupo)[0])
+    instanciador = _largo(cmds.parent(instanciador, grupo)[0])
+    if _OCULTAR_PUNTOS:
+        cmds.setAttr(particula + ".visibility", 0)
+    return instanciador
+
+
+# Ocultar las partículas (no las hojas): si en alguna versión de Maya o de
+# Arnold las instancias desaparecieran con ellas, poner False.
+_OCULTAR_PUNTOS = True
 
 
 def _crear_malla(nombre, malla, brillo=1.0):
@@ -227,13 +395,16 @@ def _arnold_cargado():
         return False
 
 
-def _material_arnold(transform, grupo, nombre, color, brillo=1.0):
+def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
+                     por_instancia=False):
     """Material de Arnold para la pieza, si Arnold (MtoA) está cargado.
 
     El lambert del grupo de sombreado queda para el visor; Arnold usa en su
     lugar un aiStandardSurface (conectado a aiSurfaceShader) que toma el color
     de cada hoja de los colores de vértice. Sin esto, en el render todas las
-    hojas saldrían del mismo verde.
+    hojas saldrían del mismo verde. ``clave`` elige los ajustes de _ARNOLD
+    (por defecto, los de ``nombre``). Con ``por_instancia``, el color de los
+    vértices se multiplica por el rgbPP de cada instancia.
     """
     if not _arnold_cargado():
         return None
@@ -249,8 +420,10 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0):
             cmds.setAttr(dato + ".attribute", conjunto, type="string")
             cmds.setAttr(dato + ".default", *_a_lineal(color, _con_gestion_de_color(), brillo),
                          type="double3")
+            if por_instancia:
+                dato = _por_instancia(dato, nombre)
             cmds.connectAttr(dato + ".outColor", shader + ".baseColor", force=True)
-            ajustes = _ARNOLD.get(nombre, {})
+            ajustes = _ARNOLD.get(clave or nombre, {})
             if ajustes.get("subsurface"):
                 _color_traslucido(dato, shader, nombre)
             for atributo, valor in ajustes.items():
@@ -261,6 +434,17 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0):
     except RuntimeError as error:
         cmds.warning(t("sin_arnold", error=error))
         return None
+
+
+def _por_instancia(dato, nombre):
+    """Multiplica el color de ``dato`` por el rgbPP de la instancia (1 si no lo hay)."""
+    instancia = cmds.shadingNode("aiUserDataColor", asUtility=True, name=nombre + "_rgbPP_ai")
+    cmds.setAttr(instancia + ".attribute", "rgbPP", type="string")
+    cmds.setAttr(instancia + ".default", 1.0, 1.0, 1.0, type="double3")
+    producto = cmds.shadingNode("aiMultiply", asUtility=True, name=nombre + "_color_hoja_ai")
+    cmds.connectAttr(dato + ".outColor", producto + ".input1", force=True)
+    cmds.connectAttr(instancia + ".outColor", producto + ".input2", force=True)
+    return producto
 
 
 def _color_traslucido(dato, shader, nombre):

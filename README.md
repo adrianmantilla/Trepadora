@@ -3,7 +3,8 @@
 Plugin para generar plantas trepadoras en Autodesk Maya 2026 y 2027, pensado para estudiantes.
 
 > **Estado: fase 0 (prototipo del crecimiento).** Todavía no hay interfaz: se usa desde el
-> Script Editor. Genera tallos con grosor y hojas como mallas, o solo curvas para ir rápido.
+> Script Editor. Genera tallos con grosor, rabillos y hojas (instancias de unas pocas hojas
+> modelo, o una sola malla), o solo curvas para ir rápido.
 
 No necesita instalar nada: funciona con el Python que trae Maya (no usa NumPy).
 
@@ -27,6 +28,9 @@ No necesita instalar nada: funciona con el Python que trae Maya (no usa NumPy).
    ```python
    tp.ejecutar(semilla=3)                   # tallos y hojas
    tp.ejecutar(semilla=3, modo="curvas")    # solo líneas, para probar ajustes rápido
+   tp.ejecutar(semilla=3, forma_hoja="corazon", tipo_tallo="verde")
+   tp.ejecutar(semilla=3, hoja_propia="miHoja")   # tu propia hoja modelada
+   tp.ejecutar(semilla=3, instancias=False)       # todas las hojas en una malla
    ```
 
    Sin localizadores, la planta nace en la base del primer objeto seleccionado.
@@ -36,6 +40,21 @@ No necesita instalar nada: funciona con el Python que trae Maya (no usa NumPy).
    cada pieza lleva además un material de Arnold que toma el color de cada hoja; las hojas
    dejan pasar algo de luz y a contraluz brillan. Si Arnold no está cargado, la planta solo
    lleva el material del visor y en el render todas las hojas salen del mismo verde.
+
+### Hojas, tallos y tipos
+
+| Opción | Por defecto | Qué hace |
+| --- | --- | --- |
+| `instancias` | True | Las hojas son instancias de unas pocas hojas modelo (unas 50): la escena pesa mucho menos y el visor va más suelto. Con `False`, todas las hojas van en una sola malla, por ejemplo para exportarla |
+| `forma_hoja` | `"hiedra"` | `"hiedra"` (con lóbulos, mezclada con acorazonada), `"corazon"`, `"alargada"` o `"redonda"` |
+| `tipo_tallo` | `"lenoso"` | `"lenoso"` (marrón, puntas verdes), `"nudoso"` (más grueso, con corteza arrugada), `"verde"` (fino y verde) o `"rojizo"` (como la parra virgen) |
+| `hoja_propia` | ninguna | Nombre de una malla de tu escena que se usa como hoja (siempre con instancias). Modélala con la base en el origen, la punta hacia +Y y la cara hacia +Z; el tamaño se ajusta solo y conserva su material |
+
+Con instancias, el visor enseña cada hoja con el tono de su hoja modelo (seis tonos de
+verde y bronce); en el render de Arnold cada hoja sale con su propio color, porque cada
+instancia lleva en `rgbPP` cuánto se aparta del tono de su modelo. Las hojas modelo quedan
+ocultas en el grupo `trepadora_hojas_modelos`, y las partículas que marcan dónde va cada
+hoja, en `trepadora_hojas_puntos` (también ocultas).
 
 ### Ajustes del crecimiento
 
@@ -98,7 +117,8 @@ objetos seleccionados.
 scripts/trepadora/
   crecimiento.py      algoritmo de crecimiento y grosor (no depende de Maya)
   hojas.py            colocación de hojas
-  geometria.py        mallas de tallos, hojas y rabillos en Python puro
+  geometria.py        mallas de tallos, hojas y rabillos en Python puro; tipos de tallo y hoja
+  instancias.py       hojas modelo y colocación de cada hoja para el instanciador
   vectores.py         operaciones con vectores
   superficie_maya.py  consultas de punto más cercano sobre mallas de Maya
   escenas.py          escenas de prueba (sencilla y ruina) y sus ajustes

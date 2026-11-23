@@ -5,5 +5,13 @@
   "resumen": "Trepadora: {ramas} ramas y {puntos} puntos en {pasos} pasos (semilla {semilla}).",
   "limite": "Trepadora: se alcanzó el límite de seguridad de {limite} puntos. Baja los pasos o la probabilidad de rama.",
   "cancelado": "Trepadora: crecimiento detenido. Se conserva lo generado hasta ahora.",
-  "sin_arnold": "Trepadora: no se pudo crear el material de Arnold ({error}). En el render, las hojas saldrán todas del mismo verde."
+  "sin_arnold": "Trepadora: no se pudo crear el material de Arnold ({error}). En el render, las hojas saldrán todas del mismo verde.",
+  "resumen_instancias": "Trepadora: {hojas} hojas, instancias de {modelos} hojas modelo.",
+  "resumen_malla": "Trepadora: {hojas} hojas en una sola malla.",
+  "forma_desconocida": "Trepadora: no hay forma de hoja «{forma}» (hay: {opciones}). Se usa «hiedra».",
+  "tallo_desconocido": "Trepadora: no hay tipo de tallo «{tipo}» (hay: {opciones}). Se usa «lenoso».",
+  "sin_hoja_propia": "Trepadora: «{nombre}» no es una malla de la escena. Se usan las hojas de la forma elegida.",
+  "hoja_propia_sin_instancias": "Trepadora: la hoja propia solo funciona con instancias, así que las hojas serán instancias.",
+  "hoja_propia_eje": "Trepadora: la hoja «{nombre}» no sale del origen hacia +Y; se ajusta a su altura. Para que quede bien, modélala con la base en el origen, la punta hacia +Y y la cara hacia +Z.",
+  "sin_instancias": "Trepadora: no se pudieron crear las instancias ({error}). Las hojas van en una sola malla."
 }

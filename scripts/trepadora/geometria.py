@@ -32,8 +32,33 @@ PERFILES_HOJA = {
     "alargada": [
         (0.00, 0.00), (0.10, 0.10), (0.30, 0.18), (0.55, 0.19), (0.80, 0.12), (1.00, 0.00),
     ],
+    "redonda": [
+        (0.00, 0.00), (0.05, 0.20), (0.16, 0.38), (0.32, 0.47), (0.50, 0.48), (0.68, 0.42),
+        (0.84, 0.29), (0.95, 0.13), (1.00, 0.00),
+    ],
 }
 PERFIL_HOJA = PERFILES_HOJA["hiedra"]
+FORMAS_HOJA = tuple(PERFILES_HOJA)
+
+# Tipos de tallo. «madera» es el color de lo viejo y «joven» el de las puntas
+# (que se ven de ese color a lo largo de «verde» puntos); «grosor» multiplica
+# el grosor de los tallos; «corteza» arruga el tubo con surcos a lo largo,
+# como la madera vieja; «rabillo» son los colores del rabillo de una hoja
+# vieja y de una nueva.
+TIPOS_TALLO = {
+    "lenoso": dict(madera=(0.27, 0.19, 0.12), joven=(0.33, 0.30, 0.15), verde=40.0,
+                   lados=6, grosor=1.0, corteza=0.0,
+                   rabillo=((0.30, 0.22, 0.12), (0.30, 0.40, 0.13))),
+    "nudoso": dict(madera=(0.21, 0.15, 0.10), joven=(0.31, 0.28, 0.14), verde=25.0,
+                   lados=8, grosor=1.3, corteza=0.22,
+                   rabillo=((0.28, 0.20, 0.11), (0.30, 0.38, 0.13))),
+    "verde": dict(madera=(0.17, 0.26, 0.09), joven=(0.30, 0.42, 0.15), verde=80.0,
+                  lados=5, grosor=0.6, corteza=0.0,
+                  rabillo=((0.20, 0.30, 0.10), (0.32, 0.44, 0.15))),
+    "rojizo": dict(madera=(0.28, 0.12, 0.08), joven=(0.45, 0.20, 0.13), verde=60.0,
+                   lados=6, grosor=0.8, corteza=0.0,
+                   rabillo=((0.32, 0.13, 0.09), (0.46, 0.22, 0.13))),
+}
 
 
 class Malla:
@@ -54,18 +79,25 @@ class Malla:
 
 
 # ------------------------------------------------------------------- tallos
-def malla_tallos(crecimiento, radios: List[List[float]], lados: int = 6,
-                 semilla: int = 1) -> Malla:
-    """Un tubo por rama, con el radio de cada punto, cerrado en punta."""
+def malla_tallos(crecimiento, radios: List[List[float]], lados: int = None,
+                 semilla: int = 1, tipo: str = "lenoso") -> Malla:
+    """Un tubo por rama, con el radio de cada punto, cerrado en punta.
+
+    ``tipo`` es uno de TIPOS_TALLO; ``lados``, si se da, manda sobre el del tipo.
+    """
+    datos = TIPOS_TALLO.get(tipo, TIPOS_TALLO["lenoso"])
+    lados = lados or datos["lados"]
     rng = random.Random(semilla * 31 + 5)
+    rng_corteza = random.Random(semilla * 37 + 2)
     malla = Malla()
     for rama, radios_rama in zip(crecimiento.ramas, radios):
         puntos = rama.puntos
         n = len(puntos)
         if n < 2:
             continue
-        base_color = _variar((0.27, 0.19, 0.12), rng, 0.15)
-        joven = (0.33, 0.30, 0.15)
+        base_color = _variar(datos["madera"], rng, 0.15)
+        joven = datos["joven"]
+        surcos = _surcos(rng_corteza, lados, datos["corteza"])
         normal_ref = rama.normales[0]
         anillos = []
         for k in range(n):
@@ -82,15 +114,18 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = 6,
             w = v.cruz(t, u)
             r = radios_rama[k]
             # Las puntas son verdes y la madera, marrón.
-            mezcla = min(1.0, (n - 1 - k) / 40.0)
+            mezcla = min(1.0, (n - 1 - k) / datos["verde"])
             color = _mezclar(joven, base_color, mezcla)
             if k == n - 1:
                 anillos.append([malla.vertice(puntos[k], color)])
                 continue
             anillo = []
+            # La corteza se arruga más en la madera vieja que en las puntas.
+            arrugas = _arrugas(rng_corteza, surcos, datos["corteza"] * mezcla)
             for j in range(lados):
                 a = 2.0 * math.pi * j / lados
-                desplazado = v.suma(v.escala(u, math.cos(a) * r), v.escala(w, math.sin(a) * r))
+                rj = r * arrugas[j]
+                desplazado = v.suma(v.escala(u, math.cos(a) * rj), v.escala(w, math.sin(a) * rj))
                 anillo.append(malla.vertice(v.suma(puntos[k], desplazado), color))
             anillos.append(anillo)
         for k in range(n - 1):
@@ -132,6 +167,86 @@ def _verde(tono):
     return _mezclar(_VERDES[i], _VERDES[i + 1], tono - i)
 
 
+def color_hoja(hoja, rng) -> Vector:
+    """Color de una hoja según su tono, edad, claridad y tinte, con algo de azar."""
+    color = _verde(getattr(hoja, "tono", 0.5))
+    # Los brotes aclaran, pero sin salir como motas de otro color.
+    color = _mezclar(_VERDE_JOVEN, color, 0.35 + 0.65 * hoja.edad)
+    claridad = getattr(hoja, "claridad", 0.0)
+    if claridad > 0.0:
+        color = _mezclar(color, _VERDE_CLARO, 0.85 * claridad)
+    else:
+        color = _mezclar(color, _VERDE_VIEJO, -0.55 * claridad)
+    color = _mezclar(color, _BRONCE, getattr(hoja, "tinte", 0.0))
+    # La hiedra de verdad es un verde apagado: sin esto, en el espacio
+    # lineal de Maya todas las hojas salen del mismo verde chillón.
+    color = _apagar(color, _APAGADO)
+    return _variar(color, rng, 0.12)
+
+
+def _forma_al_azar(rng, curvatura, plegado):
+    """Curva, pliegue, asimetría y torsión de una hoja."""
+    curva = curvatura * (0.5 + 1.0 * rng.random())
+    pliegue = plegado * (0.6 + 0.8 * rng.random())
+    asimetria = rng.uniform(-0.1, 0.1)
+    # La punta se tuerce un poco hacia un lado.
+    torsion = rng.uniform(-0.12, 0.12)
+    return curva, pliegue, asimetria, torsion
+
+
+# Cuánto se aclara el nervio central y se oscurece el borde de cada hoja.
+_NERVIO = ((0.55, 0.65, 0.35), 0.18)
+_BORDE = ((0.0, 0.0, 0.0), 0.15)
+
+
+def _lamina(malla, perfil, forma, rng, color, colocar):
+    """Añade a ``malla`` la lámina de una hoja.
+
+    ``forma`` es (curva, pliegue, asimetría, torsión). ``colocar(cx, cy, cz)``
+    pasa un punto de la hoja (cx a lo ancho, cy a lo largo de 0 a 1, cz hacia
+    su cara) a la escena.
+    """
+    curva, pliegue, asimetria, torsion = forma
+    filas = []
+    for y, ancho in perfil:
+        caida = -curva * y * y
+        if ancho == 0.0:
+            filas.append([malla.vertice(colocar(0.0 + torsion * y * y, y, caida), color)])
+        else:
+            ancho *= 1.0 + rng.uniform(-0.06, 0.06)
+            izq, der = ancho * (1.0 + asimetria), ancho * (1.0 - asimetria)
+            oscuro = _mezclar(color, _BORDE[0], _BORDE[1])
+            claro = _mezclar(color, _NERVIO[0], _NERVIO[1])
+            fila = []
+            # Sección en forma de cuenco suave (no una V): el nervio
+            # central queda arriba y los bordes caen poco a poco.
+            for r in (-1.0, -0.5, 0.0, 0.5, 1.0):
+                w = izq if r < 0 else der
+                cx = r * w
+                cz = caida - pliegue * w * (0.35 * abs(r) + 0.65 * r * r)
+                c = claro if r == 0.0 else (oscuro if abs(r) == 1.0 else color)
+                fila.append(malla.vertice(colocar(cx + torsion * y * y, y, cz), c))
+            filas.append(fila)
+    for a, b in zip(filas, filas[1:]):
+        if len(a) == 1 and len(b) > 1:
+            for j in range(len(b) - 1):
+                malla.cara(a[0], b[j + 1], b[j])
+        elif len(a) > 1 and len(b) > 1:
+            for j in range(len(a) - 1):
+                malla.cara(a[j], a[j + 1], b[j + 1], b[j])
+        elif len(a) > 1 and len(b) == 1:
+            for j in range(len(a) - 1):
+                malla.cara(a[j], a[j + 1], b[0])
+
+
+def perfil_hoja(forma: str, lobulado: float = 1.0):
+    """Perfil de la hoja: la de hiedra mezcla el lobulado con el acorazonado."""
+    perfil = PERFILES_HOJA.get(forma, PERFIL_HOJA)
+    if forma != "hiedra":
+        return perfil
+    return _perfil_mezclado(PERFILES_HOJA["corazon"], perfil, lobulado)
+
+
 def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
                 semilla: int = 1, forma: str = "hiedra") -> Malla:
     """Una lámina por hoja, plegada por el nervio, curvada y un poco asimétrica.
@@ -140,75 +255,41 @@ def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
     ``lobulado`` y tiene su propio matiz de verde.
     """
     rng = random.Random(semilla * 97 + 3)
-    perfil_base = PERFILES_HOJA.get(forma, PERFIL_HOJA)
-    entero = PERFILES_HOJA["corazon"]
     malla = Malla()
     for hoja in hojas:
         f = hoja.adelante
         z = hoja.normal
         x = v.cruz(f, z)
         s = hoja.tamano
-        lobulado = getattr(hoja, "lobulado", 1.0)
-        perfil = perfil_base if forma != "hiedra" else _perfil_mezclado(entero, perfil_base, lobulado)
-        color = _verde(getattr(hoja, "tono", 0.5))
-        # Los brotes aclaran, pero sin salir como motas de otro color.
-        color = _mezclar(_VERDE_JOVEN, color, 0.35 + 0.65 * hoja.edad)
-        claridad = getattr(hoja, "claridad", 0.0)
-        if claridad > 0.0:
-            color = _mezclar(color, _VERDE_CLARO, 0.85 * claridad)
-        else:
-            color = _mezclar(color, _VERDE_VIEJO, -0.55 * claridad)
-        color = _mezclar(color, _BRONCE, getattr(hoja, "tinte", 0.0))
-        # La hiedra de verdad es un verde apagado: sin esto, en el espacio
-        # lineal de Maya todas las hojas salen del mismo verde chillón.
-        color = _apagar(color, _APAGADO)
-        color = _variar(color, rng, 0.12)
-        curva = curvatura * (0.5 + 1.0 * rng.random())
-        pliegue = plegado * (0.6 + 0.8 * rng.random())
-        asimetria = rng.uniform(-0.1, 0.1)
-        # La punta se tuerce un poco hacia un lado.
-        torsion = rng.uniform(-0.12, 0.12)
+        perfil = perfil_hoja(forma, getattr(hoja, "lobulado", 1.0))
+        color = color_hoja(hoja, rng)
+        al_azar = _forma_al_azar(rng, curvatura, plegado)
 
-        def colocar(cx, cy, cz):
-            cx += torsion * cy * cy
-            return v.suma(hoja.base, v.suma(v.escala(x, cx * s),
-                                            v.suma(v.escala(f, cy * s), v.escala(z, cz * s))))
+        def colocar(cx, cy, cz, base=hoja.base, x=x, f=f, z=z, s=s):
+            return v.suma(base, v.suma(v.escala(x, cx * s),
+                                       v.suma(v.escala(f, cy * s), v.escala(z, cz * s))))
 
-        filas = []
-        for y, ancho in perfil:
-            caida = -curva * y * y
-            if ancho == 0.0:
-                filas.append([malla.vertice(colocar(0.0, y, caida), color)])
-            else:
-                ancho *= 1.0 + rng.uniform(-0.06, 0.06)
-                izq, der = ancho * (1.0 + asimetria), ancho * (1.0 - asimetria)
-                oscuro = _mezclar(color, (0.0, 0.0, 0.0), 0.15)
-                claro = _mezclar(color, (0.55, 0.65, 0.35), 0.18)
-                fila = []
-                # Sección en forma de cuenco suave (no una V): el nervio
-                # central queda arriba y los bordes caen poco a poco.
-                for r in (-1.0, -0.5, 0.0, 0.5, 1.0):
-                    w = izq if r < 0 else der
-                    cx = r * w
-                    cz = caida - pliegue * w * (0.35 * abs(r) + 0.65 * r * r)
-                    c = claro if r == 0.0 else (oscuro if abs(r) == 1.0 else color)
-                    fila.append(malla.vertice(colocar(cx, y, cz), c))
-                filas.append(fila)
-        for a, b in zip(filas, filas[1:]):
-            if len(a) == 1 and len(b) > 1:
-                for j in range(len(b) - 1):
-                    malla.cara(a[0], b[j + 1], b[j])
-            elif len(a) > 1 and len(b) > 1:
-                for j in range(len(a) - 1):
-                    malla.cara(a[j], a[j + 1], b[j + 1], b[j])
-            elif len(a) > 1 and len(b) == 1:
-                for j in range(len(a) - 1):
-                    malla.cara(a[j], a[j + 1], b[0])
+        _lamina(malla, perfil, al_azar, rng, color, colocar)
     return malla
 
 
-def malla_peciolos(hojas, grosor: float = 0.022) -> Malla:
+def _surcos(rng, lados, corteza):
+    """Por cada lado del tubo, si va en un surco (negativo) o en una cresta (positivo)."""
+    if corteza <= 0.0:
+        return None
+    return [rng.uniform(-1.0, 1.0) for _ in range(lados)]
+
+
+def _arrugas(rng, surcos, corteza):
+    """Cuánto se estira el radio en cada lado de un anillo: surcos que siguen la rama."""
+    if surcos is None or corteza <= 0.0:
+        return [1.0] * (len(surcos) if surcos else 64)
+    return [1.0 + corteza * (0.7 * s + 0.3 * rng.uniform(-1.0, 1.0)) for s in surcos]
+
+
+def malla_peciolos(hojas, grosor: float = 0.022, tipo: str = "lenoso") -> Malla:
     """Rabillos finos y algo arqueados que unen cada hoja con su tallo."""
+    viejo, nuevo = TIPOS_TALLO.get(tipo, TIPOS_TALLO["lenoso"])["rabillo"]
     malla = Malla()
     for hoja in hojas:
         eje = v.resta(hoja.base, hoja.tallo)
@@ -216,7 +297,7 @@ def malla_peciolos(hojas, grosor: float = 0.022) -> Malla:
         lado = v.unitario(v.cruz(eje, hoja.normal))
         if lado is None or largo < v.EPS:
             continue
-        color = _mezclar((0.30, 0.22, 0.12), (0.30, 0.40, 0.13), 1.0 - hoja.edad * 0.6)
+        color = _mezclar(viejo, nuevo, 1.0 - hoja.edad * 0.6)
         ancho = v.escala(lado, grosor * hoja.tamano)
         fino = v.escala(ancho, 0.6)
         # Punto medio levantado: el rabillo forma un arco, no una línea recta.

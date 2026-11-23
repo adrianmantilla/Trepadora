@@ -13,6 +13,10 @@ Uso desde la terminal, con mayapy (no hace falta abrir Maya)::
 Vistas: general, ventana, columna y contraluz; sin vistas, renderiza
 «general». Si Arnold no tiene licencia, la imagen sale
 con marca de agua, que para comparar versiones no molesta.
+
+Para cambiar opciones de la planta, la variable TREPADORA_AJUSTES con un JSON,
+por ejemplo ``TREPADORA_AJUSTES='{"instancias": false}'`` (todas las hojas en
+una malla, para comparar con las instancias).
 """
 
 import glob
@@ -254,13 +258,13 @@ def _ajustes(cmds):
     cmds.setAttr("defaultResolution.deviceAspectRatio", ANCHO / float(ALTO))
 
 
-def preparar(cmds, semilla=1):
+def preparar(cmds, semilla=1, **ajustes):
     """Crea la ruina con hiedra, materiales de piedra, luces y ajustes de Arnold."""
     import capturas_maya
     tp = capturas_maya._recargar()
     cmds.file(new=True, force=True)
     inicio = time.time()
-    tp.escena_ruina(semilla=semilla)
+    tp.escena_ruina(semilla=semilla, **ajustes)
     segundos = time.time() - inicio
     piedra = _material_piedra(cmds, "render_piedra", PIEDRA)
     suelo = _material_piedra(cmds, "render_suelo", SUELO, 0.95, DESGASTE_SUELO)
@@ -305,7 +309,11 @@ def renderizar(carpeta, prefijo, vistas=("general",), semilla=1):
     if not os.path.isdir(carpeta):
         os.makedirs(carpeta)
     informe = ["MtoA {}".format(cmds.pluginInfo("mtoa", query=True, version=True))]
-    segundos, sol = preparar(cmds, semilla)
+    import json
+    ajustes = json.loads(os.environ.get("TREPADORA_AJUSTES") or "{}")
+    if ajustes:
+        informe.append("ajustes: " + json.dumps(ajustes, sort_keys=True))
+    segundos, sol = preparar(cmds, semilla, **ajustes)
     forma_sol = cmds.listRelatives(sol, shapes=True)[0]
     informe.append("crecimiento y mallas: {:.2f} s".format(segundos))
     todas = dict(capturas_maya.VISTAS_RUINA, contraluz=CONTRALUZ)
