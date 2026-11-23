@@ -29,7 +29,10 @@ for _ruta in (os.path.join(_RAIZ, "scripts"), os.path.join(_RAIZ, "herramientas"
 ANCHO, ALTO = 1280, 720
 # Cielo azulado y sol cálido, desde la misma dirección que la luz de las
 # capturas del visor.
-CIELO = dict(color=(0.75, 0.85, 1.0), intensidad=1.0)
+# «intensidad» es la luz que da el cielo; el cielo que se ve de fondo se
+# queda en los colores de DEGRADADO (la visibilidad para la cámara compensa).
+# Con el cielo azul, a 1.0 las sombras salían casi negras a contraluz.
+CIELO = dict(color=(0.75, 0.85, 1.0), intensidad=1.3)
 # Bruma del horizonte: un gris azulado pálido. El cielo la tiene justo en el
 # horizonte y por debajo, y el suelo se funde con ella a lo lejos (LEJANIA).
 BRUMA = (0.74, 0.79, 0.86)
@@ -40,16 +43,19 @@ BRUMA = (0.74, 0.79, 0.86)
 DEGRADADO = ((0.0, BRUMA), (0.5, BRUMA), (0.515, (0.60, 0.70, 0.88)),
              (0.56, (0.42, 0.58, 0.90)), (0.7, (0.30, 0.48, 0.88)), (1.0, (0.22, 0.40, 0.84)))
 AMPLIAR_SUELO = 25.0
-# Dónde empieza y dónde termina de fundirse el suelo con la bruma, en la
-# rampa circular que va del centro del suelo (0) hacia fuera. Sin esto el
+# Cuánta bruma lleva el suelo según la distancia, como (posición, bruma) en
+# la rampa circular que va del centro del suelo (0) hacia fuera. Sin esto el
 # suelo acaba en una línea dura contra el cielo y parece un plano infinito.
-LEJANIA = (0.2, 0.65)
+# Empieza suave y cerca: desde una cámara baja la franja lejana se ve fina.
+LEJANIA = ((0.1, 0.0), (0.3, 0.3), (0.65, 1.0))
 SOL = dict(color=(1.0, 0.92, 0.8), intensidad=2.5, giro=(-50, -35, 0), angulo=2.0)
 # Vistas propias del render. «contraluz» mira la ventana con el sol bajo detrás
 # del muro: se ve la luz que atraviesa las hojas que cuelgan en el hueco.
 # El sol, más fuerte: a contraluz es lo que hace brillar las hojas.
+# A contraluz la cara de la pared que ve la cámara queda en sombra: se abre medio
+# paso de exposición, como haría un fotógrafo midiendo en la hiedra.
 CONTRALUZ = dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40, sol=(-28, 160, 0),
-                 intensidad_sol=4.0)
+                 intensidad_sol=4.0, exposicion=0.5)
 PIEDRA = (0.55, 0.52, 0.47)
 # Manchas de la piedra: ruido en el espacio de la escena (rasgos de unas 15
 # unidades), entre un tono más oscuro y otro más claro que PIEDRA. El relieve,
@@ -157,15 +163,13 @@ def _lejania(cmds, shader):
     el cielo en el horizonte, haya sol o sombra, y no queda línea entre los dos.
     """
     try:
-        cerca, lejos = LEJANIA
         lugar = cmds.shadingNode("place2dTexture", asUtility=True, name=shader + "_lugar")
-        blanco, negro = (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)
-        bruma = tuple(c * CIELO["intensidad"] for c in BRUMA)
+        cerca = [(0.0, (1.0, 1.0, 1.0))] + [(pos, (1.0 - k,) * 3) for pos, k in LEJANIA]
+        lejos = [(0.0, (0.0, 0.0, 0.0))] + [(pos, tuple(k * c for c in BRUMA))
+                                            for pos, k in LEJANIA]
         # Tipo 4: rampa circular, por anillos desde el centro del suelo.
-        mascara = _rampa(cmds, shader + "_cerca", ((0.0, blanco), (cerca, blanco), (lejos, negro)),
-                         4, lugar)
-        velo = _rampa(cmds, shader + "_lejos", ((0.0, negro), (cerca, negro), (lejos, bruma)),
-                      4, lugar)
+        mascara = _rampa(cmds, shader + "_cerca", cerca, 4, lugar)
+        velo = _rampa(cmds, shader + "_lejos", lejos, 4, lugar)
         apagado = cmds.shadingNode("aiMultiply", asUtility=True, name=shader + "_apagado")
         fuente = cmds.listConnections(shader + ".baseColor", source=True, destination=False,
                                       plugs=True)
@@ -195,7 +199,13 @@ def _luces(cmds):
     cmds.shadingNode("aiSkyDomeLight", asLight=True, name="render_cielo")
     forma_cielo = cmds.ls(type="aiSkyDomeLight")[0]
     cmds.setAttr(forma_cielo + ".color", *CIELO["color"], type="double3")
-    cmds.setAttr(forma_cielo + ".intensity", CIELO["intensidad"])
+    if cmds.attributeQuery("aiCamera", node=forma_cielo, exists=True):
+        cmds.setAttr(forma_cielo + ".intensity", CIELO["intensidad"])
+        cmds.setAttr(forma_cielo + ".aiCamera", 1.0 / CIELO["intensidad"])
+    else:
+        # Sin esa visibilidad, más luz aclararía también el cielo de fondo
+        # y dejaría de casar con la bruma del suelo.
+        print("render_arnold: cielo sin visibilidad de cámara; intensidad 1")
     _degradado_cielo(cmds, forma_cielo)
     forma_sol = cmds.directionalLight(name="render_solShape", intensity=SOL["intensidad"])
     sol = cmds.listRelatives(forma_sol, parent=True)[0]
@@ -259,7 +269,10 @@ def _camara(cmds, vista):
     cmds.camera("render_cam", edit=True, horizontalFieldOfView=vista.get("fov", 40))
     for camara in cmds.ls(type="camera"):
         cmds.setAttr(camara + ".renderable", 0)
-    cmds.setAttr(cmds.listRelatives("render_cam", shapes=True)[0] + ".renderable", 1)
+    forma = cmds.listRelatives("render_cam", shapes=True)[0]
+    cmds.setAttr(forma + ".renderable", 1)
+    if cmds.attributeQuery("aiExposure", node=forma, exists=True):
+        cmds.setAttr(forma + ".aiExposure", vista.get("exposicion", 0.0))
     return "render_cam"
 
 
