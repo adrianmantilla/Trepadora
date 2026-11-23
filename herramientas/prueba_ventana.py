@@ -37,12 +37,52 @@ _SALIDA = os.environ.get("TREPADORA_SALIDA", os.path.join(_RAIZ, "capturas", "ve
 _informe = {"pasos": {}, "errores": {}}
 
 
+class _Salida(object):
+    """Avisos, errores y tracebacks del Script Editor mientras dura un paso.
+
+    Incluye los errores de los botones de la ventana: Qt no los pasa a quien
+    pulsa, solo los escribe en el Script Editor.
+    """
+
+    TIPOS = {3: "aviso", 4: "error", 6: "traza"}
+
+    def __init__(self):
+        self.lineas = []
+
+    def __enter__(self):
+        import maya.api.OpenMaya as om
+
+        def al_escribir(texto, tipo, *_):
+            texto = (texto or "").strip()
+            if texto and (tipo in self.TIPOS or "Traceback" in texto or "Error" in texto):
+                self.lineas.append("{}: {}".format(self.TIPOS.get(tipo, tipo), texto[:600]))
+
+        self._escucha = om.MCommandMessage.addCommandOutputCallback(al_escribir)
+        self._gancho = sys.excepthook
+
+        def gancho(tipo, valor, traza):
+            self.lineas.append("excepcion: " + "".join(
+                traceback.format_exception(tipo, valor, traza))[-1500:])
+            self._gancho(tipo, valor, traza)
+
+        sys.excepthook = gancho
+        return self
+
+    def __exit__(self, *_):
+        import maya.api.OpenMaya as om
+
+        sys.excepthook = self._gancho
+        om.MMessage.removeCallback(self._escucha)
+
+
 def _paso(nombre, funcion, *args, **kwargs):
     """Ejecuta un paso; apunta su resultado o el error y sigue."""
     inicio = time.time()
     _informe["paso_actual"] = nombre
+    salida = _Salida()
     try:
-        resultado = funcion(*args, **kwargs)
+        with salida:
+            resultado = funcion(*args, **kwargs)
         _informe["pasos"][nombre] = {"ok": True, "segundos": round(time.time() - inicio, 2),
                                      "datos": resultado}
         return resultado
@@ -50,6 +90,9 @@ def _paso(nombre, funcion, *args, **kwargs):
         _informe["pasos"][nombre] = {"ok": False, "segundos": round(time.time() - inicio, 2)}
         _informe["errores"][nombre] = traceback.format_exc()
         return None
+    finally:
+        if salida.lineas:
+            _informe.setdefault("salida", {})[nombre] = salida.lineas[-25:]
 
 
 def _procesar():
@@ -428,10 +471,27 @@ def deshacer(v):
     """Ctrl+Z tras Crear malla: la planta entera desaparece de una vez y rehacer la devuelve."""
     mallas_antes = _mallas()
     # Lo mismo que hace un estudiante: crear y deshacer enseguida.
+    anterior = v.sesion.ultima_planta
+    paso_antes = cmds.undoInfo(query=True, undoName=True)
+    habilitado = v.boton_malla.isEnabled()
     v.boton_malla.click()
     planta = v.sesion.ultima_planta
     mallas_con = _mallas()
     nombre_paso = cmds.undoInfo(query=True, undoName=True)
+    extra = {"boton_habilitado": habilitado, "paso_antes": paso_antes,
+             "historial_activo": cmds.undoInfo(query=True, state=True),
+             "planta_nueva": planta != anterior, "mensaje": v.mensaje.text()}
+    if planta == anterior:
+        # El clic no creó otra planta: se repite sin Qt para ver el error.
+        try:
+            with _Salida() as salida:
+                v.sesion.crear_malla()
+            extra["directo"] = {"ok": True, "salida": salida.lineas[-20:]}
+        except Exception:
+            extra["directo"] = {"ok": False, "error": traceback.format_exc()[-3000:]}
+        planta = v.sesion.ultima_planta
+        mallas_con = _mallas()
+        nombre_paso = cmds.undoInfo(query=True, undoName=True)
     cmds.undo()
     _procesar()
     datos = {"paso": nombre_paso, "mallas_antes": mallas_antes, "mallas_con_planta": mallas_con,
@@ -445,6 +505,7 @@ def deshacer(v):
                  instanciadores=len(cmds.ls(type="instancer") or []),
                  hojas_tras_rehacer=_hojas_instanciadas())
     datos["visor"] = _captura_visor("4b_rehecha")
+    datos.update(extra)
     return datos
 
 
@@ -550,6 +611,9 @@ def recargar_plugin():
     originales = {"borrar": espiar(menu, "borrar"), "cerrar": espiar(ventana, "cerrar")}
     try:
         try:
+            # Como el instalador: el historial guarda pasos del plug-in (Crear malla) y,
+            # mientras estén, Maya no deja descargarlo.
+            cmds.flushUndo()
             cmds.unloadPlugin(instalar.PLUGIN + ".py")
         except RuntimeError:
             datos["error_descargar"] = traceback.format_exc().strip().splitlines()[-1]
