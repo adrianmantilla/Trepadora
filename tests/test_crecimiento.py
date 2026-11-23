@@ -191,6 +191,16 @@ def ruina(**cambios):
     return c
 
 
+_RUINAS = {}
+
+
+def ruina_de_semilla(semilla):
+    """La ruina con los ajustes de escenas.py, creciendo una sola vez por semilla."""
+    if semilla not in _RUINAS:
+        _RUINAS[semilla] = ruina(semilla=semilla)
+    return _RUINAS[semilla]
+
+
 def calvas_frente(hojas, celda=10.0):
     """Calvas del frente del muro de la ruina (z = 10), sin contar la ventana.
 
@@ -228,7 +238,7 @@ def calvas_frente(hojas, celda=10.0):
 class PruebasRuina(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.c = ruina(semilla=1)
+        cls.c = ruina_de_semilla(1)
 
     def test_busca_las_paredes_en_vez_de_reptar_por_el_suelo(self):
         puntos = todos(self.c)
@@ -243,7 +253,7 @@ class PruebasRuina(unittest.TestCase):
         # piedra desnuda (celdas de 10 cm: 40 celdas son 0,4 m²).
         tamano = escenas.RUINA["ajustes"]["paso"] * 2.4 * escenas.RUINA["ajustes"]["hojas"]["tamano"]
         for semilla in (1, 2, 3):
-            c = self.c if semilla == 1 else ruina(semilla=semilla)
+            c = ruina_de_semilla(semilla)
             hojas = colocar_hojas(c, ParametrosHojas(semilla=semilla, tamano=tamano))
             vacias, mayor = calvas_frente(hojas)
             self.assertLess(vacias, 0.12, "semilla %d" % semilla)
@@ -282,21 +292,46 @@ class PruebasRuina(unittest.TestCase):
         self.assertGreater(encima, 200)
         self.assertLess(de_pie, 0.05 * encima)
 
+    def test_en_las_paredes_las_hojas_cuelgan_o_salen_de_lado(self):
+        # En una pared, la hiedra no pone hojas de pie como banderas ni
+        # derechas hacia fuera como aletas: la lámina queda de lado o colgando.
+        # Las de los tallos que cuelgan junto a una jamba no cuentan: miran al
+        # hueco a propósito.
+        sup = escena_ruina()
+        colgantes = {q for r in self.c.ramas if r.colgante for q in r.puntos}
+        en_pared = arriba = aletas = 0
+        for h in self.hojas():
+            _, normal = sup.mas_cercano(h.tallo)
+            if normal is None or abs(normal[1]) > 0.3 or h.tallo in colgantes:
+                continue
+            en_pared += 1
+            arriba += h.adelante[1] > 0.5
+            aletas += v.punto(h.adelante, normal) > 0.7
+        self.assertGreater(en_pared, 3000)
+        self.assertLess(arriba, 0.005 * en_pared)
+        self.assertLess(aletas, 0.015 * en_pared)
+
     def test_hojas_mayores_cerca_de_la_raiz(self):
         # La planta no es una alfombra uniforme: las hojas adultas de la parte
         # vieja, cerca de la raíz, son mayores que las del crecimiento nuevo.
-        recorrido = _recorrido(self.c)
-        donde = {q: recorrido[i][k] for i, r in enumerate(self.c.ramas)
-                 for k, q in enumerate(r.puntos)}
+        # Se juntan tres semillas: en una sola, las hojas lejanas salen de
+        # pocas ramas y el vigor de cada una pesa demasiado.
+        tamano = escenas.RUINA["ajustes"]["paso"] * 2.4 * escenas.RUINA["ajustes"]["hojas"]["tamano"]
         cerca, lejos = [], []
-        for h in self.hojas(variacion=0.0):
-            if h.edad >= 1.0:
-                d = donde[h.tallo]
-                if d < 0.3:
-                    cerca.append(h.tamano)
-                elif d > 0.7:
-                    lejos.append(h.tamano)
-        self.assertGreater(len(lejos), 100)
+        for semilla in (1, 2, 3):
+            c = ruina_de_semilla(semilla)
+            recorrido = _recorrido(c)
+            donde = {q: recorrido[i][k] for i, r in enumerate(c.ramas)
+                     for k, q in enumerate(r.puntos)}
+            for h in colocar_hojas(c, ParametrosHojas(semilla=semilla, tamano=tamano,
+                                                      variacion=0.0)):
+                if h.edad >= 1.0:
+                    d = donde[h.tallo]
+                    if d < 0.3:
+                        cerca.append(h.tamano)
+                    elif d > 0.7:
+                        lejos.append(h.tamano)
+        self.assertGreater(len(lejos), 300)
         self.assertGreater(sum(cerca) / len(cerca), 1.25 * sum(lejos) / len(lejos))
 
     def test_el_tronco_se_ve_entre_las_hojas(self):

@@ -71,7 +71,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
     """
     p = parametros or ParametrosHojas()
     superficie = superficie if superficie is not None else getattr(crecimiento, "superficie", None)
-    rng = random.Random(p.semilla * 7919 + 17)
+    # Cada rama, y cada punto de rama, tiene su propio azar: así, si una hoja
+    # se descarta o se ajusta algo en una, el resto de la planta no cambia.
+    azar = p.semilla * 7919 + 17
+    rng = random.Random(azar)
     hojas: List[Hoja] = []
     # Lo gruesa que es cada parte de la planta (1 en la base del tronco) y lo
     # lejos que queda de la raíz (1 en la punta más alejada).
@@ -89,6 +92,8 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         n = len(rama.puntos)
         if n < 2:
             continue
+        azar_rama = azar + 1000003 * (i_rama + 1)
+        rng.seed(azar_rama)
         lado = 1.0 if rng.random() < 0.5 else -1.0
         # Cada rama tiene su vigor: unas dan hojas grandes y tupidas, otras
         # pequeñas y ralas. Así la masa se agrupa en matas en vez de ser uniforme.
@@ -108,6 +113,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
         elif colgante:
             jovenes *= 0.5
         for k in range(1, n):
+            rng.seed(azar_rama + 7 * k)
             punto = rama.puntos[k]
             normal_sup = rama.normales[k]
             grueso, lejos = grosor[i_rama][k], recorrido[i_rama][k]
@@ -227,6 +233,13 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             claridad = (_K_CLARO_LEJOS * (lejos - 0.4)
                         + (_CLARO_COLGANTE if colgante else _K_CLARO_MATA * p.manchas * (0.5 - mata))
                         + rng.gauss(0.0, 0.1))
+            if not colgante and not encima:
+                # En una mata, las hojas de fuera reciben la luz y las de dentro
+                # quedan a la sombra de las demás. Las de fuera, más claras: la
+                # mata se lee con volumen y no como un bloque oscuro.
+                fuera = (v.punto(v.resta(base, punto), normal_sup) / tamano
+                         + 0.5 * max(0.0, v.punto(adelante, normal_sup)))
+                claridad += _K_CLARO_FUERA * p.manchas * mata * (min(fuera, 0.9) - _FUERA_MEDIO)
             tinte = 0.0
             bajo = (punto[1] - alto_min) / alto_total
             if (p.bronce > 0.0 and edad > 0.85 and bajo < 0.3 and not colgante
@@ -242,11 +255,26 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
 
 
 def _direccion(costado, t, normal_sup, caida, ruido, levanta):
-    abajo = v.unitario(v.tangente(v.ABAJO, normal_sup)) or v.CERO
+    abajo = v.unitario(v.tangente(v.ABAJO, normal_sup))
     adelante = v.suma(v.escala(costado, 1.0), v.escala(t, 0.25))
-    adelante = v.suma(adelante, v.escala(abajo, caida * 1.5))
+    adelante = v.suma(adelante, v.escala(abajo or v.CERO, caida * 1.5))
     adelante = v.suma(adelante, v.escala(ruido, 0.45))
-    adelante = v.tangente(adelante, normal_sup)
+    # Se normaliza antes de despegarla: si el costado, la caída y el azar casi
+    # se anulan, la hoja saldría derecha de la pared, como una aleta.
+    adelante = (v.unitario(v.tangente(adelante, normal_sup))
+                or v.unitario(v.tangente(costado, normal_sup)))
+    if adelante is None:
+        return None
+    if abajo is not None:
+        # En un tallo que corre de lado por la pared, la mitad de las hojas
+        # saldría hacia arriba, de pie como banderas. La hiedra no las pone
+        # así: el rabillo gira y la lámina queda de lado o colgando.
+        sube = -v.punto(adelante, abajo)
+        if sube > _SUBIDA_MAX:
+            lateral = (v.unitario(v.suma(adelante, v.escala(abajo, sube)))
+                       or v.unitario(v.cruz(normal_sup, abajo)))
+            adelante = v.suma(v.escala(abajo, -_SUBIDA_MAX),
+                              v.escala(lateral, math.sqrt(1.0 - _SUBIDA_MAX ** 2)))
     return v.unitario(v.suma(adelante, v.escala(normal_sup, levanta)))
 
 
@@ -276,6 +304,11 @@ _K_TAMANO = 0.6
 _ZONA_MIN = 0.6
 # Cuánto más oscuras son las matas y más claros los claros.
 _K_CLARO_MATA = 1.8
+# Dentro de las matas, cuánto más claras son las hojas que sobresalen (las de
+# fuera) que las pegadas a la pared. _FUERA_MEDIO es lo que sobresale una hoja
+# típica de mata, en largos de hoja: por encima aclara y por debajo oscurece.
+_K_CLARO_FUERA = 2.0
+_FUERA_MEDIO = 0.45
 # Los tallos que cuelgan van tupidos (como en una mata) pero con el verde de
 # un claro.
 _MATA_COLGANTE = 0.9
@@ -295,6 +328,9 @@ _K_DEG_TAMANO = 0.6
 _K_CLARO_LEJOS = 0.2
 # Rabillos más largos en las matas (bulto) que en los claros.
 _K_RABILLO = 3.0
+# Lo más que apunta hacia arriba una hoja en una pared (seno del ángulo con
+# la horizontal): unos 17 grados.
+_SUBIDA_MAX = 0.3
 
 
 def _tumbar_en_remate(superficie, base, adelante, cara, normal_sup, tamano):
