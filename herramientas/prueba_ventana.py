@@ -578,8 +578,12 @@ def ruina(v):
     datos["malla_s"] = round(time.time() - inicio, 2)
     datos["malla"] = _resumen_sesion(v)
     datos["materiales_tono"] = sorted(cmds.ls("trepadora_hoja*_tono*_mat") or [])
+    # Con textura, el color del lambert viene de un nodo file (getAttr no sirve).
     datos["colores_tono"] = [[round(c, 3) for c in cmds.getAttr(m + ".color")[0]]
                              for m in datos["materiales_tono"]]
+    datos["tono_con_textura"] = [bool(cmds.listConnections(m + ".color", source=True,
+                                                           destination=False))
+                                 for m in datos["materiales_tono"]]
     _vista((-260, 220, 520), (20, 110, 40), 42)
     datos["visor"] = _captura_visor("5_ruina")
     datos["captura"] = _captura_ventana(v, "5_ruina")

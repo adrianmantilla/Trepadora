@@ -31,6 +31,10 @@ TEXTURAS = os.path.join(CARPETA, "texturas")
 RESOLUCIONES = (("512", 9), ("1k", 10), ("2k", 11), ("4k", 12))
 # Ajustes del material Wood Bark (los que no estén aquí, los de Painter).
 AJUSTES = {}
+# Contraste del detalle alrededor de su media: con 1, Wood Bark deja motas
+# blancas (el 5 % de los puntos pasa de 2 veces el color del tallo); con 0,6
+# el tallo conserva su color y la textura no se recorta.
+CONTRASTE = 0.6
 
 
 def nombre_de(x):
@@ -126,7 +130,8 @@ def detalle_relativo(origen, destino, escala=None):
         media = sum(n * lineal[v] for v, n in enumerate(cuenta)) / max(1, len(datos))
         escala = 0.5 / max(media, 1e-4)
         print("   media lineal", round(media, 4))
-    tabla = bytes(min(255, int(round(255.0 * lineal[v] * escala))) for v in range(256))
+    tabla = bytes(max(0, min(255, int(round(255.0 * (0.5 + CONTRASTE * (lineal[v] * escala - 0.5))))))
+                  for v in range(256))
     buf = datos.translate(tabla)
     gris = QtGui.QImage(buf, ancho, alto, ancho, QtGui.QImage.Format.Format_Grayscale8)
     nueva = gris.convertToFormat(QtGui.QImage.Format.Format_RGB888)
