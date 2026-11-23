@@ -162,10 +162,10 @@ def crecer_con_progreso(crecimiento, pasos):
 
 def crear_vista_previa(curvas):
     """Crea una curva lineal por rama dentro de un grupo nuevo."""
-    grupo = cmds.group(empty=True, name=GRUPO_VISTA_PREVIA)
+    grupo = _bajo(None, cmds.group(empty=True, name=GRUPO_VISTA_PREVIA))
     for generacion, puntos in curvas:
-        curva = cmds.curve(degree=1, point=[tuple(map(float, p)) for p in puntos],
-                           name="trepadora_rama_g{}_1".format(generacion))
+        curva = _bajo(None, cmds.curve(degree=1, point=[tuple(map(float, p)) for p in puntos],
+                                       name="trepadora_rama_g{}_1".format(generacion)))
         forma = cmds.listRelatives(curva, shapes=True, fullPath=True)[0]
         cmds.setAttr(forma + ".overrideEnabled", 1)
         cmds.setAttr(forma + ".overrideColor", _COLORES[min(generacion, len(_COLORES) - 1)])
@@ -203,7 +203,7 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instan
     datos_hojas.setdefault("semilla", semilla)
     hojas = colocar_hojas(crecimiento, ParametrosHojas(**datos_hojas))
 
-    grupo = cmds.group(empty=True, name=GRUPO_PLANTA)
+    grupo = _bajo(None, cmds.group(empty=True, name=GRUPO_PLANTA))
     piezas = [
         ("trepadora_tallos",
          geometria.malla_tallos(crecimiento, radios, lados=lados, semilla=semilla,
@@ -260,7 +260,8 @@ def _crear_hojas_instanciadas(hojas, grupo, forma, semilla, hoja_propia=None):
     def a_lineal(c):
         return _a_lineal(c, lineal, _BRILLO_HOJAS)
 
-    modelos_grp = _largo(cmds.group(empty=True, name="trepadora_hojas_modelos", parent=grupo))
+    modelos_grp = _bajo(grupo, cmds.group(empty=True, name="trepadora_hojas_modelos",
+                                          parent=grupo))
     try:
         return _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal)
     except RuntimeError:
@@ -272,8 +273,23 @@ def _crear_hojas_instanciadas(hojas, grupo, forma, semilla, hoja_propia=None):
 
 
 def _largo(nombre):
-    """Ruta completa de un nodo recién creado o movido (Maya da la más corta que no se repite)."""
-    return (cmds.ls(nombre, long=True) or [nombre])[0]
+    """Ruta completa de ``nombre``, si es de un solo nodo (si no, ``nombre`` tal cual)."""
+    rutas = cmds.ls(nombre, long=True) or []
+    return rutas[0] if len(rutas) == 1 else nombre
+
+
+def _bajo(padre, nombre):
+    """Ruta completa del nodo que un comando acaba de crear o mover bajo ``padre``.
+
+    ``padre`` es la ruta completa del padre, o None si el nodo está en la raíz.
+    Maya deja que dos nodos se llamen igual si tienen padres distintos (la
+    segunda planta de la escena tiene su propio ``trepadora_tallos``), y
+    entonces el nombre corto que devuelven sus comandos vale para los dos: al
+    usarlo, Maya falla con «More than one object matches name». Entre hermanos,
+    en cambio, no se repite: con la ruta del padre delante es único.
+    """
+    ruta = (padre or "") + "|" + nombre.split("|")[-1]
+    return ruta if cmds.objExists(ruta) else _largo(nombre)
 
 
 def _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal):
@@ -296,7 +312,7 @@ def _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal
                 _BRILLO_HOJAS)
             _material_arnold(transform, sombreado, "trepadora_hojas_inst", _COLOR_HOJAS,
                              _BRILLO_HOJAS, clave="trepadora_hojas", por_instancia=True)
-            modelos.append(_largo(cmds.parent(transform, modelos_grp)[0]))
+            modelos.append(_bajo(modelos_grp, cmds.parent(transform, modelos_grp)[0]))
         indices = [float(i) for i in datos.indices]
         proporciones = [instancias.proporcion(c, datos.modelos[i].color, a_lineal)
                         for c, i in zip(datos.colores, datos.indices)]
@@ -310,8 +326,9 @@ def _modelo_propio(nombre, padre):
     if not cmds.objExists(nombre) or not _es_malla(nombre):
         cmds.warning(t("sin_hoja_propia", nombre=nombre))
         return None
-    copia = cmds.duplicate(nombre, name="trepadora_hoja_propia")[0]
-    copia = _largo(cmds.parent(copia, padre)[0])
+    junto = (cmds.listRelatives(nombre, parent=True, fullPath=True) or [None])[0]
+    copia = _bajo(junto, cmds.duplicate(nombre, name="trepadora_hoja_propia")[0])
+    copia = _bajo(padre, cmds.parent(copia, padre)[0])
     # Se queda con la forma tal como se modeló, sin la posición del objeto.
     cmds.xform(copia, matrix=[1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0])
     caja = cmds.exactWorldBoundingBox(copia)
@@ -326,8 +343,10 @@ def _modelo_propio(nombre, padre):
 def _instanciador(nombre, grupo, modelos, datos, indices, proporciones):
     """Partículas quietas, una por hoja, y el instanciador que pone en ellas los modelos."""
     n = len(datos)
-    particula, forma = (_largo(x) for x in cmds.particle(
-        position=[tuple(p) for p in datos.posiciones], name=nombre + "_puntos"))
+    particula, forma = cmds.particle(position=[tuple(p) for p in datos.posiciones],
+                                     name=nombre + "_puntos")
+    particula = _bajo(None, particula)
+    forma = _bajo(particula, forma)
     for atributo, tipo in (("giroPP", "vectorArray"), ("escalaPP", "vectorArray"),
                            ("rgbPP", "vectorArray"), ("modeloPP", "doubleArray")):
         for nombre_pp in (atributo, atributo + "0"):
@@ -353,8 +372,8 @@ def _instanciador(nombre, grupo, modelos, datos, indices, proporciones):
         forma, addObject=True, object=modelos, cycle="None", levelOfDetail="Geometry",
         rotationUnits="Degrees", rotationOrder="XYZ", position="position",
         rotation="giroPP", scale="escalaPP", objectIndex="modeloPP", name=nombre + "_instancias")
-    particula = _largo(cmds.parent(particula, grupo)[0])
-    instanciador = _largo(cmds.parent(instanciador, grupo)[0])
+    particula = _bajo(grupo, cmds.parent(particula, grupo)[0])
+    instanciador = _bajo(grupo, cmds.parent(_bajo(None, instanciador), grupo)[0])
     if _OCULTAR_PUNTOS:
         cmds.setAttr(particula + ".visibility", 0)
     return instanciador
@@ -376,8 +395,10 @@ def _crear_malla(nombre, malla, brillo=1.0):
                               for c in malla.colores])
     fn.setVertexColors(colores, list(range(len(malla.vertices))))
     _suavizar(fn)
+    cmds.rename(om.MFnDagNode(objeto).fullPathName(), nombre)
+    # Tras renombrar, la ruta desde el propio nodo: el nombre puede repetirse
+    # en otra planta (ver _bajo).
     transform = om.MFnDagNode(objeto).fullPathName()
-    transform = cmds.rename(transform, nombre)
     forma = cmds.listRelatives(transform, shapes=True, fullPath=True)[0]
     cmds.setAttr(forma + ".displayColors", 1)
     return transform

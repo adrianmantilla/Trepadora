@@ -262,7 +262,7 @@ class Sesion:
         tam = self._paso_automatico() * 6.0 if self.superficies_validas() else 1.0
         forma = cmds.listRelatives(loc, shapes=True, fullPath=True)[0]
         cmds.setAttr(forma + ".localScale", tam, tam, tam, type="double3")
-        loc = _largo(cmds.parent(loc, grupo)[0])
+        loc = prototipo._bajo(_largo(grupo), cmds.parent(loc, grupo)[0])
         self._olvidar()
         return loc
 
