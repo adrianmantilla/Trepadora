@@ -4,7 +4,7 @@
 # DEV/trepadora_painter/texturas/<resolución>/corteza_<mapa>.jpg, con el
 # formato de trepadora/texturas.py:
 #
-# * detalle: el color de Painter pasado a lineal y dividido por su media
+# * detalle: la luminancia de Painter pasada a lineal y dividida por su media
 #   (media 0,5), porque en Maya se multiplica por el color de cada punto del tallo;
 # * normal: OpenGL (Y arriba), como lo lee Maya;
 # * rugosidad: en gris.
@@ -107,35 +107,31 @@ def _a_lineal(i):
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
-def detalle_relativo(origen, destino, escalas=None):
-    """Color de Painter (sRGB) -> lineal, dividido por su media: media 0,5 por canal.
+def detalle_relativo(origen, destino, escala=None):
+    """Luminancia de Painter (sRGB) -> lineal, dividida por su media: media 0,5.
 
-    Devuelve las escalas de cada canal. Se calculan con la primera resolución y
-    se usan las mismas en las demás, para que todas den el mismo tono.
+    Solo la luminancia: el tono lo pone el color de cada punto del tallo.
+    Devuelve la escala; se calcula con la primera resolución y se usa la misma
+    en las demás, para que todas den el mismo tono.
     """
-    img = QtGui.QImage(origen).convertToFormat(QtGui.QImage.Format.Format_RGB888)
+    img = QtGui.QImage(origen).convertToFormat(QtGui.QImage.Format.Format_Grayscale8)
     ancho, alto = img.width(), img.height()
     datos = bytes(img.constBits())[:img.sizeInBytes()]
     fila = img.bytesPerLine()
-    if fila != ancho * 3:   # quitar el relleno de cada fila
-        datos = b"".join(datos[y * fila:y * fila + ancho * 3] for y in range(alto))
+    if fila != ancho:   # quitar el relleno de cada fila
+        datos = b"".join(datos[y * fila:y * fila + ancho] for y in range(alto))
     lineal = [_a_lineal(i) for i in range(256)]
-    salida = bytearray(len(datos))
-    if escalas is None:
-        escalas = []
-        for c in range(3):
-            canal = datos[c::3]
-            cuenta = [canal.count(bytes([v])) for v in range(256)]
-            media = sum(n * lineal[v] for v, n in enumerate(cuenta)) / max(1, len(canal))
-            escalas.append(0.5 / max(media, 1e-4))
-        print("   medias lineales", [round(0.5 / k, 4) for k in escalas])
-    for c in range(3):
-        tabla = bytes(min(255, int(round(255.0 * lineal[v] * escalas[c]))) for v in range(256))
-        salida[c::3] = datos[c::3].translate(tabla)
-    buf = bytes(salida)
-    nueva = QtGui.QImage(buf, ancho, alto, ancho * 3, QtGui.QImage.Format.Format_RGB888)
+    if escala is None:
+        cuenta = [datos.count(bytes([v])) for v in range(256)]
+        media = sum(n * lineal[v] for v, n in enumerate(cuenta)) / max(1, len(datos))
+        escala = 0.5 / max(media, 1e-4)
+        print("   media lineal", round(media, 4))
+    tabla = bytes(min(255, int(round(255.0 * lineal[v] * escala))) for v in range(256))
+    buf = datos.translate(tabla)
+    gris = QtGui.QImage(buf, ancho, alto, ancho, QtGui.QImage.Format.Format_Grayscale8)
+    nueva = gris.convertToFormat(QtGui.QImage.Format.Format_RGB888)
     print("   ", os.path.basename(destino), ancho, nueva.save(destino, "JPG", 91))
-    return escalas
+    return escala
 
 
 def a_jpg(origen, destino, gris=False):
@@ -151,8 +147,10 @@ def contacto(rutas, destino, lado=160):
     pintor = QtGui.QPainter(imagen)
     for i, ruta in enumerate(rutas):
         img = QtGui.QImage(ruta)
-        if not img.isNull():
-            pintor.drawImage(QtCore.QRect(i * lado, 0, lado, lado), img)
+        if not img.isNull():   # reducida con filtro: sin él, la corteza parece ruido
+            pintor.drawImage(i * lado, 0, img.scaled(
+                lado, lado, QtCore.Qt.AspectRatioMode.IgnoreAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation))
     pintor.end()
     print("contacto", destino, imagen.save(destino, "JPG", 45), os.path.getsize(destino))
 
@@ -192,7 +190,7 @@ def pasos():
         fuente.set_parameters(AJUSTES)
     for _ in esperar_libre():
         yield
-    escalas = None
+    escala = None
     for res, log2 in RESOLUCIONES:
         exportar(conjunto.name(), log2, os.path.join(CRUDO, res))
         for _ in esperar_libre():
@@ -200,8 +198,8 @@ def pasos():
         crudo = os.path.join(CRUDO, res, conjunto.name() + "_{}.png")
         final = os.path.join(TEXTURAS, res)
         os.makedirs(final, exist_ok=True)
-        escalas = detalle_relativo(crudo.format("detalle"),
-                                   os.path.join(final, "corteza_detalle.jpg"), escalas)
+        escala = detalle_relativo(crudo.format("detalle"),
+                                  os.path.join(final, "corteza_detalle.jpg"), escala)
         a_jpg(crudo.format("normal"), os.path.join(final, "corteza_normal.jpg"))
         a_jpg(crudo.format("rugosidad"), os.path.join(final, "corteza_rugosidad.jpg"), gris=True)
         yield

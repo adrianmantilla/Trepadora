@@ -577,12 +577,45 @@ def ruina(v):
     v.boton_malla.click()
     datos["malla_s"] = round(time.time() - inicio, 2)
     datos["malla"] = _resumen_sesion(v)
-    datos["materiales_tono"] = sorted(cmds.ls("trepadora_hojas_tono*_mat") or [])
+    datos["materiales_tono"] = sorted(cmds.ls("trepadora_hoja*_tono*_mat") or [])
     datos["colores_tono"] = [[round(c, 3) for c in cmds.getAttr(m + ".color")[0]]
                              for m in datos["materiales_tono"]]
     _vista((-260, 220, 520), (20, 110, 40), 42)
     datos["visor"] = _captura_visor("5_ruina")
     datos["captura"] = _captura_ventana(v, "5_ruina")
+    return datos
+
+
+def texturas(v):
+    """Cambia «Resolución de texturas» a 2K como un estudiante y mira la planta.
+
+    Deja una captura de cerca con las texturas en el visor (como la tecla 6) y
+    vuelve a 1K al terminar.
+    """
+    from trepadora import texturas as tx
+
+    def rutas():
+        return {n: cmds.getAttr(n + "." + a) for n, a, _j, _m in tx.nodos_de_textura()}
+
+    antes = rutas()
+    datos = {"carpeta": tx.carpeta(), "disponibles": tx.disponibles(),
+             "antes": tx.resolucion_actual(), "nodos": len(antes),
+             "faltan": sorted(r for r in antes.values() if not os.path.isfile(r)),
+             "juegos": sorted({cmds.getAttr(n + "." + tx.ATRIBUTO) for n in antes})}
+    combo = v.combo_texturas
+    combo.setCurrentIndex(combo.findData("2k"))
+    _procesar()
+    despues = rutas()
+    datos["despues"] = tx.resolucion_actual()
+    datos["en_2k"] = sum(1 for r in despues.values() if os.sep + "2k" + os.sep in r)
+    panel = _vista((-29, 124, 117), (-20, 110, 0), 40)
+    cmds.modelEditor(panel, edit=True, displayTextures=True)
+    datos["visor"] = _captura_visor("6_texturas_2k")
+    datos["captura"] = _captura_ventana(v, "6_texturas")
+    cmds.modelEditor(panel, edit=True, displayTextures=False)
+    combo.setCurrentIndex(combo.findData("1k"))
+    _procesar()
+    datos["al_final"] = tx.resolucion_actual()
     return datos
 
 
@@ -672,6 +705,7 @@ def _pasos():
         ("guardar_preajuste", lambda: guardar_preajuste(_v())),
         ("hoja_propia", lambda: hoja_propia(_v())),
         ("ruina", lambda: ruina(_v())),
+        ("texturas", lambda: texturas(_v())),
         # Antes de recargar el plug-in: al descargarlo se cierra la ventana.
         ("ajustes_al_salir", _ajustes_al_salir),
         ("recargar_plugin", recargar_plugin),
