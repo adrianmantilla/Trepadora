@@ -118,10 +118,11 @@ def _perfil_mezclado(a, b, t):
 
 
 # Matices de verde de una hiedra: oscuro, medio, amarillento y azulado.
-_VERDES = [(0.07, 0.20, 0.05), (0.11, 0.28, 0.07), (0.22, 0.33, 0.07), (0.05, 0.21, 0.12)]
-_VERDE_JOVEN = (0.24, 0.40, 0.11)
-_VERDE_CLARO = (0.35, 0.47, 0.13)
-_VERDE_VIEJO = (0.025, 0.10, 0.045)
+_VERDES = [(0.07, 0.20, 0.05), (0.11, 0.28, 0.07), (0.22, 0.31, 0.10), (0.05, 0.21, 0.12)]
+# Claros y brotes de un verde oliva, no lima; lo viejo, oscuro pero no negro.
+_VERDE_JOVEN = (0.27, 0.37, 0.14)
+_VERDE_CLARO = (0.36, 0.41, 0.17)
+_VERDE_VIEJO = (0.035, 0.09, 0.05)
 _BRONCE = (0.24, 0.085, 0.07)
 
 
@@ -150,7 +151,8 @@ def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
         lobulado = getattr(hoja, "lobulado", 1.0)
         perfil = perfil_base if forma != "hiedra" else _perfil_mezclado(entero, perfil_base, lobulado)
         color = _verde(getattr(hoja, "tono", 0.5))
-        color = _mezclar(_VERDE_JOVEN, color, hoja.edad)
+        # Los brotes aclaran, pero sin salir como motas de otro color.
+        color = _mezclar(_VERDE_JOVEN, color, 0.35 + 0.65 * hoja.edad)
         claridad = getattr(hoja, "claridad", 0.0)
         if claridad > 0.0:
             color = _mezclar(color, _VERDE_CLARO, 0.85 * claridad)
@@ -235,7 +237,7 @@ def _mezclar(a: Vector, b: Vector, t: float) -> Vector:
     return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
 
 
-_APAGADO = 0.25
+_APAGADO = 0.3
 
 
 def _apagar(c: Vector, cantidad: float) -> Vector:

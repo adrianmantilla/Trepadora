@@ -124,9 +124,9 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # Matas y claros: un ruido suave en el espacio hace que unas zonas
             # estén más tupidas que otras, como en una hiedra de verdad. Lo que
             # cuelga en el aire va siempre bien vestido.
-            mata = _suave(_ruido(punto, escala_manchas, p.semilla))
+            mata = _suave(_ruido(punto, escala_manchas, p.semilla, _OCTAVAS_MATA))
             if colgante:
-                mata = max(mata, 0.6)
+                mata = max(mata, 0.5)
             densidad *= 1.0 - _K_DENSIDAD * p.manchas * (1.0 - mata)
             if piso is not None and normal_sup[1] > 0.8 and punto[1] < piso:
                 densidad *= p.en_suelo
@@ -137,9 +137,11 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             t = v.unitario(v.resta(punto, anterior))
             if t is None:
                 continue
-            if frente is not None and abs(v.punto(normal_sup, v.ARRIBA)) > 0.5:
+            if frente is not None and (abs(v.punto(normal_sup, v.ARRIBA)) > 0.5
+                                       or v.punto(normal_sup, frente) < 0.5):
                 # Cuelga en el aire bajo un saliente: la superficie más cercana
-                # es un techo o un suelo, y las hojas quedarían de canto.
+                # es un techo, un suelo o el lateral de una ventana, y las
+                # hojas quedarían de canto. Miran hacia fuera, a la luz.
                 normal_sup = frente
             costado = v.unitario(v.cruz(normal_sup, t))
             if costado is None:
@@ -151,8 +153,11 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             desde_punta = (n - k) + (0 if rama.viva else jovenes * 0.3)
             edad = min(1.0, desde_punta / float(max(jovenes, 1.0)))
             tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
-            tamano *= 1.0 + p.degradado * (0.45 - lejos) * (0.4 if colgante else 1.0)
-            tamano *= 1.0 + _K_TAMANO * p.manchas * (mata - 0.5)
+            # Más grandes cerca de la raíz y en las matas; sin llegar a hojitas
+            # diminutas en los claros más alejados.
+            zona = 1.0 + p.degradado * (0.45 - lejos) * (0.4 if colgante else 1.0)
+            zona *= 1.0 + _K_TAMANO * p.manchas * (mata - 0.5)
+            tamano *= min(1.9, max(0.5, zona))
             tamano *= 1.0 + p.variacion * (rng.random() * 2.0 - 1.0)
 
             # Dirección de la hoja: hacia un costado, un poco hacia delante,
@@ -207,10 +212,11 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                     continue
             # Las hojas de las puntas y de las ramas colgantes son más enteras.
             lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
-            # Lo nuevo, lejos de la raíz y en los claros, es más claro; las
-            # matas viejas, más oscuras. Alguna hoja vieja tira a bronce.
-            claridad = (0.9 * (lejos - 0.4) + 1.8 * p.manchas * (0.5 - mata)
-                        + rng.gauss(0.0, 0.25))
+            # Los claros son de un verde más claro y las matas, más oscuras;
+            # por manchas, no hoja a hoja. Lo más alejado de la raíz aclara un
+            # poco. Alguna hoja vieja tira a bronce.
+            claridad = (0.4 * (lejos - 0.4) + 2.4 * p.manchas * (0.5 - mata)
+                        + rng.gauss(0.0, 0.1))
             tinte = 0.0
             bajo = (punto[1] - alto_min) / alto_total
             if (p.bronce > 0.0 and edad > 0.85 and bajo < 0.3 and not colgante
@@ -252,8 +258,12 @@ def _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup):
     return cercano[1] < punto[1]
 
 
-_K_DENSIDAD = 0.95
-_K_TAMANO = 1.0
+_K_DENSIDAD = 0.8
+_K_TAMANO = 1.5
+# Las matas salen de un ruido de una sola octava: manchas grandes y limpias,
+# no salpicadas.
+_OCTAVAS_MATA = 1
+_ANCHO_MATA = 0.5
 
 
 def _tumbar_en_remate(superficie, base, adelante, cara, normal_sup, tamano):
@@ -382,10 +392,10 @@ def _hash(i, j, k, semilla):
     return ((n ^ (n >> 16)) & 0xFFFFFF) / float(0xFFFFFF)
 
 
-def _ruido(punto, escala, semilla):
+def _ruido(punto, escala, semilla, octavas=2):
     """Ruido de valor 3D suave, de 0 a 1, con dos octavas."""
     total, peso, amplitud = 0.0, 0.0, 1.0
-    for octava in range(2):
+    for octava in range(octavas):
         e = escala / (2.0 ** octava)
         x, y, z = punto[0] / e, punto[1] / e, punto[2] / e
         i, j, k = math.floor(x), math.floor(y), math.floor(z)
@@ -407,7 +417,7 @@ def _ruido(punto, escala, semilla):
 
 def _suave(n):
     """Estira el ruido para que haya matas y claros marcados."""
-    t = min(1.0, max(0.0, (n - 0.25) / 0.5))
+    t = min(1.0, max(0.0, (n - 0.5 + _ANCHO_MATA / 2.0) / _ANCHO_MATA))
     return t * t * (3.0 - 2.0 * t)
 
 
