@@ -20,6 +20,7 @@ al abrir Maya otra vez el plug-in se carga solo y aparecen el menú y el estante
 """
 
 import json
+import math
 import os
 import sys
 import time
@@ -535,15 +536,27 @@ def ajustes_de_planta(v):
 def guardar_preajuste(v):
     from PySide6 import QtWidgets
 
+    # Si el preajuste ya existe (de otra vez con las mismas preferencias), la ventana
+    # pregunta si se sustituye. En macOS esa pregunta es nativa: la prueba no la ve y
+    # se quedaría esperando a que alguien pulse. Se contesta que sí y se apunta.
+    preguntas = []
     original = QtWidgets.QInputDialog.getText
+    original_pregunta = QtWidgets.QMessageBox.question
+
+    def pregunta(*a, **_k):
+        preguntas.append(str(a[2]) if len(a) > 2 else "")
+        return QtWidgets.QMessageBox.Yes
+
     QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("Prueba del aula", True))
+    QtWidgets.QMessageBox.question = staticmethod(pregunta)
     try:
         v._guardar_preajuste()
     finally:
         QtWidgets.QInputDialog.getText = original
+        QtWidgets.QMessageBox.question = original_pregunta
     carpeta = v.carpeta_preajustes()
     combo = v.combo_preajustes
-    return {"carpeta": carpeta, "archivos": sorted(os.listdir(carpeta)),
+    return {"carpeta": carpeta, "archivos": sorted(os.listdir(carpeta)), "preguntas": preguntas,
             "elegido": combo.currentText(),
             "en_lista": [combo.itemText(i) for i in range(combo.count())]}
 
@@ -866,8 +879,40 @@ def zonas_y_guia(v):
     return datos
 
 
+def _encuadrar(puntos, margen=1.35, fov=40, ancho=1280, alto=760):
+    """Pone la cámara de frente al muro (mirando hacia -Z) con todos los ``puntos`` dentro.
+
+    Se encuadra para la proporción de las capturas, que es la más apaisada: así
+    los puntos también caben en el visor donde se hace clic.
+    """
+    xs, ys, zs = zip(*puntos)
+    centro = ((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0, (min(zs) + max(zs)) / 2.0)
+    tan_h = math.tan(math.radians(fov) / 2.0)
+    tan_v = tan_h * alto / float(ancho)
+    distancia = margen * max((max(xs) - min(xs)) / 2.0 / tan_h, (max(ys) - min(ys)) / 2.0 / tan_v)
+    return _vista((centro[0], centro[1], max(zs) + max(distancia, 20.0)), centro, fov)
+
+
+def _vista_previa_dibujada():
+    """[curvas, puntos] de la vista previa que hay en la escena (lo que se ve en el visor)."""
+    from trepadora import prototipo
+
+    curvas = cmds.listRelatives(prototipo.GRUPO_VISTA_PREVIA, children=True, fullPath=True) \
+        if cmds.objExists(prototipo.GRUPO_VISTA_PREVIA) else []
+    puntos = 0
+    for curva in curvas or []:
+        for forma in cmds.listRelatives(curva, shapes=True, fullPath=True) or []:
+            puntos += cmds.getAttr(forma + ".cp", size=True)
+    return [len(curvas or []), puntos]
+
+
 def recortar(v):
-    """Recorta el tallo con un clic de verdad en el visor; después Ctrl+Z y rehacer."""
+    """Recorta el tallo por la mitad con un clic de verdad en el visor y pulsa Ctrl+Z.
+
+    El Ctrl+Z va justo después del clic, como lo haría un estudiante; lo que
+    pasa se mira en el paso siguiente, cuando Maya ya ha atendido el aviso de
+    deshacer.
+    """
     import maya.api.OpenMaya as om
     import maya.api.OpenMayaUI as omui
     from PySide6 import QtWidgets
@@ -878,14 +923,15 @@ def recortar(v):
     v.escena_de_prueba("sencilla")
     v.controles["pasos"].casilla.setValue(220)
     v.boton_crecer.click()
-    panel = _vista((0, 80, 330), (0, 70, 0))
-    vista = omui.M3dView.getM3dViewFromModelPanel(panel)
     c = v.sesion._crecimiento
     tronco = c.ramas[0]
+    panel = _encuadrar(tronco.puntos)
+    vista = omui.M3dView.getM3dViewFromModelPanel(panel)
     k = len(tronco.puntos) // 2
     x, y, dentro = vista.worldToView(om.MPoint(*tronco.puntos[k]))
-    datos = {"pixel": [x, y, dentro], "total": c.total_puntos, "ramas": len(c.ramas),
-             "k": k, "largo_tronco": len(tronco.puntos)}
+    datos = {"pixel": [x, y, dentro], "visor_px": [vista.portWidth(), vista.portHeight()],
+             "total": c.total_puntos, "ramas": len(c.ramas), "k": k,
+             "largo_tronco": len(tronco.puntos), "dibujada": _vista_previa_dibujada()}
     datos["visor_antes"] = _captura_visor("9_recortar_antes")
     v.boton_recortar.click()
     datos["herramienta"] = cmds.currentCtx()
@@ -896,15 +942,30 @@ def recortar(v):
     c = v.sesion._crecimiento
     datos["tras_recortar"] = {"total": c.total_puntos, "ramas": len(c.ramas),
                               "largo_tronco": len(c.ramas[0].puntos),
-                              "motivo_tronco": c.ramas[0].motivo}
+                              "motivo_tronco": c.ramas[0].motivo,
+                              "dibujada": _vista_previa_dibujada()}
     datos["mensaje"] = v.mensaje.text()
-    datos["visor"] = _captura_visor("9_recortar_despues")
+    datos["deshacer"] = cmds.undoInfo(query=True, undoName=True)
     cmds.undo()
-    _procesar()
-    datos["tras_deshacer"] = v.sesion._crecimiento.total_puntos
+    return datos
+
+
+def recortar_deshecho(v):
+    """Tras Ctrl+Z: la rama tiene que haber vuelto. Después, rehacer."""
+    c = v.sesion._crecimiento
+    datos = {"total": c.total_puntos, "ramas": len(c.ramas),
+             "largo_tronco": len(c.ramas[0].puntos), "dibujada": _vista_previa_dibujada(),
+             "al_dia": v.sesion.al_dia(), "rehacer": cmds.undoInfo(query=True, redoName=True)}
     cmds.redo()
-    _procesar()
-    datos["tras_rehacer"] = v.sesion._crecimiento.total_puntos
+    return datos
+
+
+def recortar_rehecho(v):
+    """Tras rehacer: otra vez recortada. Foto, se suelta la herramienta y se crea la malla."""
+    c = v.sesion._crecimiento
+    datos = {"total": c.total_puntos, "ramas": len(c.ramas),
+             "largo_tronco": len(c.ramas[0].puntos), "dibujada": _vista_previa_dibujada()}
+    datos["visor"] = _captura_visor("9_recortar_despues")
     v.boton_recortar.click()
     datos["herramienta_despues"] = cmds.currentCtx()
     v.boton_malla.click()
@@ -929,8 +990,17 @@ def raices(v):
         datos["vertices_tallos_{}".format(valor)] = cmds.polyEvaluate(tallos, vertex=True)
         if valor == 0.0:
             cmds.delete(planta)
-    q = v.sesion._crecimiento.ramas[0].puntos[25]
-    _vista((q[0] + 14, q[1] + 4, q[2] + 30), q, 24)
+    # De cerca, solo los tallos (las hojas taparían las raicillas), desde la pared.
+    for hijo in cmds.listRelatives(planta, children=True, fullPath=True) or []:
+        if hijo.split("|")[-1] != tallos.split("|")[-1]:
+            cmds.hide(hijo)
+    c = v.sesion._crecimiento
+    q = c.ramas[0].puntos[len(c.ramas[0].puntos) // 3]
+    _, normal = c.cercano(q)
+    ojo = tuple(q[i] + 16.0 * normal[i] for i in range(3))
+    ojo = (ojo[0] + 6.0, ojo[1] + 5.0, ojo[2])
+    datos["camara"] = {"mira": _redondear(q), "normal": _redondear(normal, 3)}
+    _vista(ojo, q, 30)
     datos["visor"] = _captura_visor("10_raices")
     v.controles["raices"].casilla.setValue(0.5)
     return datos
@@ -1056,6 +1126,8 @@ def _pasos():
         ("exportar_ligeras", lambda: exportar_ligeras(_v())),
         ("zonas_y_guia", lambda: zonas_y_guia(_v())),
         ("recortar", lambda: recortar(_v())),
+        ("recortar_deshecho", lambda: recortar_deshecho(_v())),
+        ("recortar_rehecho", lambda: recortar_rehecho(_v())),
         ("raices", lambda: raices(_v())),
         ("idioma_en", lambda: idioma_en(_v())),
         ("idioma_en_visto", lambda: idioma_en_visto(_v())),

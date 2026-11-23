@@ -231,8 +231,10 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                 if base is None:
                     continue
             if zonas is not None and any(
-                    zonas.dentro(v.suma(base, v.escala(adelante, tamano * f))) for f in (0.0, 0.5, 1.0)):
-                # Ni la base ni la punta de la hoja entran en una zona prohibida.
+                    zonas.dentro(v.suma(base, v.escala(adelante, tamano * f)), _MARGEN_ZONA * tamano)
+                    for f in (0.0, 0.5, 1.0)):
+                # Ni la base, ni el centro, ni la punta de la hoja entran en una
+                # zona prohibida; con margen, para que tampoco asomen sus bordes.
                 continue
             # Las hojas de las puntas y de las ramas colgantes son más enteras.
             lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
@@ -345,6 +347,9 @@ _K_DEG_TAMANO = 0.6
 _K_CLARO_LEJOS = 0.2
 # Rabillos más largos en las matas (bulto) que en los claros.
 _K_RABILLO = 3.0
+# Margen alrededor de las zonas prohibidas, en tamaños de hoja: media hoja de
+# ancho, para que sus bordes tampoco entren.
+_MARGEN_ZONA = 0.3
 # Rodales de bronce: salen donde el ruido pasa de _BRONCE_UMBRAL (casi toda la
 # parte baja y vieja de la planta) y ahí tiran a bronce como mucho _BRONCE_MAX
 # veces la proporción pedida. Así quedan sueltas entre las verdes y no en una
