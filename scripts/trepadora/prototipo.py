@@ -208,13 +208,16 @@ def _asignar_material(transform, nombre, color, brillo=1.0):
 # para que el color sea el de los vértices, como en el visor. Las hojas son
 # finas: con thinWalled, «subsurface» es la luz que las atraviesa (a contraluz
 # brillan), pero lo que pasa al otro lado se le quita a la cara iluminada; la
-# hiedra es gruesa y cerosa, deja pasar poca.
+# hiedra es gruesa y cerosa, deja pasar poca. La luz que atraviesa una hoja
+# sale mucho más clara y amarilla que su cara: el color de cada hoja se
+# multiplica por _TRASLUCIDO.
 _ARNOLD = {
     "trepadora_tallos": {"base": 1.0, "specular": 0.15, "specularRoughness": 0.6},
     "trepadora_hojas": {"base": 1.0, "specular": 0.5, "specularRoughness": 0.32,
-                        "thinWalled": 1, "subsurface": 0.2},
+                        "thinWalled": 1, "subsurface": 0.25},
     "trepadora_rabillos": {"base": 1.0, "specular": 0.25, "specularRoughness": 0.45},
 }
+_TRASLUCIDO = (2.6, 3.0, 1.2)
 
 
 def _arnold_cargado():
@@ -249,7 +252,7 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0):
             cmds.connectAttr(dato + ".outColor", shader + ".baseColor", force=True)
             ajustes = _ARNOLD.get(nombre, {})
             if ajustes.get("subsurface"):
-                cmds.connectAttr(dato + ".outColor", shader + ".subsurfaceColor", force=True)
+                _color_traslucido(dato, shader, nombre)
             for atributo, valor in ajustes.items():
                 cmds.setAttr(shader + "." + atributo, valor)
         if cmds.attributeQuery("aiSurfaceShader", node=grupo, exists=True):
@@ -258,6 +261,18 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0):
     except RuntimeError as error:
         cmds.warning(t("sin_arnold", error=error))
         return None
+
+
+def _color_traslucido(dato, shader, nombre):
+    """Conecta al color de la luz que atraviesa la hoja su color, aclarado."""
+    try:
+        claro = cmds.shadingNode("aiMultiply", asUtility=True, name=nombre + "_traslucido_ai")
+        cmds.connectAttr(dato + ".outColor", claro + ".input1", force=True)
+        cmds.setAttr(claro + ".input2", *_TRASLUCIDO, type="double3")
+        cmds.connectAttr(claro + ".outColor", shader + ".subsurfaceColor", force=True)
+    except RuntimeError:
+        # Sin aiMultiply, el mismo color de la hoja: atraviesa menos luz.
+        cmds.connectAttr(dato + ".outColor", shader + ".subsurfaceColor", force=True)
 
 
 def _con_gestion_de_color():

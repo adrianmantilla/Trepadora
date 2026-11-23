@@ -30,15 +30,24 @@ ANCHO, ALTO = 1280, 720
 # Cielo azulado y sol cálido, desde la misma dirección que la luz de las
 # capturas del visor.
 CIELO = dict(color=(0.75, 0.85, 1.0), intensidad=1.0)
+# Degradado del cielo (posición de abajo a arriba, color lineal): tierra bajo
+# el horizonte, bruma clara y cálida en el horizonte y azul más hondo arriba.
+# Si no se puede montar, queda el color liso de CIELO.
+DEGRADADO = ((0.0, (0.30, 0.28, 0.25)), (0.48, (0.45, 0.42, 0.38)),
+             (0.5, (1.0, 0.96, 0.88)), (0.6, (0.78, 0.86, 1.0)),
+             (1.0, (0.38, 0.56, 0.95)))
 SOL = dict(color=(1.0, 0.92, 0.8), intensidad=2.5, giro=(-50, -35, 0), angulo=2.0)
 # Vistas propias del render. «contraluz» mira la ventana con el sol bajo detrás
 # del muro: se ve la luz que atraviesa las hojas que cuelgan en el hueco.
 CONTRALUZ = dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40, sol=(-28, 160, 0))
 PIEDRA = (0.55, 0.52, 0.47)
 # Manchas de la piedra: ruido en el espacio de la escena (rasgos de unas 15
-# unidades), entre un tono más oscuro y otro más claro que PIEDRA.
-DESGASTE = dict(escala=(0.07, 0.07, 0.07), oscuro=0.7, claro=1.15, relieve=0.4)
+# unidades), entre un tono más oscuro y otro más claro que PIEDRA. El relieve,
+# de otro ruido más fino (rasgos de unas 2 o 3 unidades).
+DESGASTE = dict(escala=0.07, oscuro=0.7, claro=1.15, escala_relieve=0.4, relieve=0.8)
 SUELO = (0.32, 0.31, 0.28)
+# En el suelo, manchas más pequeñas: grandes, se leen como nubes.
+DESGASTE_SUELO = dict(DESGASTE, escala=0.14)
 
 
 def _iniciar():
@@ -55,39 +64,62 @@ def _iniciar():
     return cmds
 
 
-def _material_piedra(cmds, nombre, color, rugosidad=0.85):
+def _material_piedra(cmds, nombre, color, rugosidad=0.85, desgaste=DESGASTE):
     shader = cmds.shadingNode("aiStandardSurface", asShader=True, name=nombre)
     cmds.setAttr(shader + ".baseColor", *color, type="double3")
     cmds.setAttr(shader + ".specular", 0.15)
     cmds.setAttr(shader + ".specularRoughness", rugosidad)
-    _desgaste(cmds, nombre, shader, color)
+    _desgaste(cmds, nombre, shader, color, desgaste)
     grupo = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=nombre + "SG")
     cmds.connectAttr(shader + ".outColor", grupo + ".surfaceShader", force=True)
     return grupo
 
 
-def _desgaste(cmds, nombre, shader, color):
+def _ruido(cmds, nombre, escala, color1, color2, octavas=4):
+    ruido = cmds.shadingNode("aiNoise", asTexture=True, name=nombre)
+    cmds.setAttr(ruido + ".octaves", octavas)
+    cmds.setAttr(ruido + ".scale", escala, escala, escala, type="double3")
+    cmds.setAttr(ruido + ".coordSpace", 0)  # mundo
+    cmds.setAttr(ruido + ".color1", *color1, type="double3")
+    cmds.setAttr(ruido + ".color2", *color2, type="double3")
+    return ruido
+
+
+def _desgaste(cmds, nombre, shader, color, desgaste):
     """Manchas y relieve de ruido en la piedra, para que no parezca plástico.
 
     Solo decora el render de prueba. Si algún nodo o atributo no existe en
     esta versión de Arnold, la piedra se queda lisa y el render sigue.
     """
     try:
-        ruido = cmds.shadingNode("aiNoise", asTexture=True, name=nombre + "_manchas")
-        cmds.setAttr(ruido + ".octaves", 4)
-        cmds.setAttr(ruido + ".scale", *DESGASTE["escala"], type="double3")
-        cmds.setAttr(ruido + ".coordSpace", 0)  # mundo
-        oscuro = tuple(c * DESGASTE["oscuro"] for c in color)
-        claro = tuple(min(1.0, c * DESGASTE["claro"]) for c in color)
-        cmds.setAttr(ruido + ".color1", *oscuro, type="double3")
-        cmds.setAttr(ruido + ".color2", *claro, type="double3")
-        cmds.connectAttr(ruido + ".outColor", shader + ".baseColor", force=True)
+        oscuro = tuple(c * desgaste["oscuro"] for c in color)
+        claro = tuple(min(1.0, c * desgaste["claro"]) for c in color)
+        manchas = _ruido(cmds, nombre + "_manchas", desgaste["escala"], oscuro, claro)
+        cmds.connectAttr(manchas + ".outColor", shader + ".baseColor", force=True)
+        granos = _ruido(cmds, nombre + "_granos", desgaste["escala_relieve"],
+                        (0.0, 0.0, 0.0), (1.0, 1.0, 1.0), octavas=3)
         relieve = cmds.shadingNode("bump2d", asUtility=True, name=nombre + "_relieve")
-        cmds.setAttr(relieve + ".bumpDepth", DESGASTE["relieve"])
-        cmds.connectAttr(ruido + ".outColorR", relieve + ".bumpValue", force=True)
+        cmds.setAttr(relieve + ".bumpDepth", desgaste["relieve"])
+        cmds.connectAttr(granos + ".outColorR", relieve + ".bumpValue", force=True)
         cmds.connectAttr(relieve + ".outNormal", shader + ".normalCamera", force=True)
     except RuntimeError as error:
         print("render_arnold: piedra sin desgaste ({})".format(error))
+
+
+def _degradado_cielo(cmds, forma_cielo):
+    """Pone en el cielo el DEGRADADO de abajo a arriba, con una rampa de Maya."""
+    try:
+        rampa = cmds.shadingNode("ramp", asTexture=True, name="render_cielo_degradado")
+        cmds.setAttr(rampa + ".type", 0)  # en V: de abajo a arriba
+        for i in cmds.getAttr(rampa + ".colorEntryList", multiIndices=True) or []:
+            cmds.removeMultiInstance("{}.colorEntryList[{}]".format(rampa, i), b=True)
+        for i, (posicion, color) in enumerate(DEGRADADO):
+            entrada = "{}.colorEntryList[{}]".format(rampa, i)
+            cmds.setAttr(entrada + ".position", posicion)
+            cmds.setAttr(entrada + ".color", *color, type="double3")
+        cmds.connectAttr(rampa + ".outColor", forma_cielo + ".color", force=True)
+    except RuntimeError as error:
+        print("render_arnold: cielo sin degradado ({})".format(error))
 
 
 def _luces(cmds):
@@ -95,6 +127,7 @@ def _luces(cmds):
     forma_cielo = cmds.ls(type="aiSkyDomeLight")[0]
     cmds.setAttr(forma_cielo + ".color", *CIELO["color"], type="double3")
     cmds.setAttr(forma_cielo + ".intensity", CIELO["intensidad"])
+    _degradado_cielo(cmds, forma_cielo)
     forma_sol = cmds.directionalLight(name="render_solShape", intensity=SOL["intensidad"])
     sol = cmds.listRelatives(forma_sol, parent=True)[0]
     cmds.setAttr(sol + ".rotate", *SOL["giro"], type="double3")
@@ -137,7 +170,7 @@ def preparar(cmds, semilla=1):
     tp.escena_ruina(semilla=semilla)
     segundos = time.time() - inicio
     piedra = _material_piedra(cmds, "render_piedra", PIEDRA)
-    suelo = _material_piedra(cmds, "render_suelo", SUELO, 0.95)
+    suelo = _material_piedra(cmds, "render_suelo", SUELO, 0.95, DESGASTE_SUELO)
     for nodo in cmds.ls("prueba_*", type="transform"):
         if cmds.listRelatives(nodo, shapes=True, type="mesh"):
             cmds.sets(nodo, edit=True, forceElement=suelo if nodo == "prueba_suelo" else piedra)

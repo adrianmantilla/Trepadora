@@ -43,7 +43,7 @@ class ParametrosHojas:
     # Tamaño de esas matas, en largos de hoja.
     escala_manchas: float = 9.0
     # Cuántas hojas tiran a bronce, como la hiedra en invierno (con 0.015,
-    # alrededor de una de cada ciento veinte). Salen sueltas, nunca dos juntas,
+    # alrededor de una de cada cien). Salen sueltas, nunca dos juntas,
     # entre las hojas viejas de la parte baja.
     bronce: float = 0.015
 
@@ -249,7 +249,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                     and not encima):
                 rodal = _ruido(punto, escala_manchas * 0.5, p.semilla + 57)
                 if rng.random() < p.bronce * min(_BRONCE_MAX, _K_BRONCE * max(0.0, rodal - _BRONCE_UMBRAL)):
-                    tinte = rng.uniform(0.35, 0.85)
+                    tinte = rng.uniform(0.55, 0.95)
                     if _bronce_cerca(bronces, base, lado_bronce):
                         tinte = 0.0
                     else:
@@ -342,10 +342,10 @@ _K_RABILLO = 3.0
 # mancha marrón.
 _BRONCE_UMBRAL = 0.35
 _K_BRONCE = 200.0
-_BRONCE_MAX = 4.0
+_BRONCE_MAX = 5.0
 # Distancia mínima entre dos hojas bronce, en tamaños de hoja: de dos en dos o
 # de tres en tres, juntas, ya se leen como una mancha rojiza.
-_BRONCE_SEPARACION = 2.0
+_BRONCE_SEPARACION = 1.5
 # Tamaño de las hojas según la generación de la rama (tronco, rama, ramilla...).
 _ESCALA_GEN = (1.12, 1.0, 0.86, 0.76, 0.7)
 # Lo más que apunta hacia arriba una hoja en una pared (seno del ángulo con
