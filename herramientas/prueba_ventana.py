@@ -133,6 +133,7 @@ def _seguridad():
 _vistos = set()
 _inicio = time.time()
 _vigia = None
+_archivo = "prueba_ventana.json"  # el informe que se está escribiendo
 
 
 def _vigilar():
@@ -167,6 +168,8 @@ def _vigilar():
             "textos": [x.text()[:600] for x in w.findChildren(QtWidgets.QLabel) if x.text()][:12],
             "botones": [x.text() for x in w.findChildren(QtWidgets.QAbstractButton)
                         if x.text()][:12], "captura": captura})
+        # Ya, sin esperar al final del paso: Maya puede quedarse esperando en este diálogo.
+        _escribir(_archivo)
 
 
 def _empezar_vigia():
@@ -710,6 +713,9 @@ def _abrir_y_capturar():
 
 
 def comprobar_arranque_y_salir():
+    global _archivo
+    _archivo = "prueba_arranque.json"
+
     def hacer():
         _informe["paso_actual"] = "arranque"
         try:
