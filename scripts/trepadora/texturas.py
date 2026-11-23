@@ -86,6 +86,14 @@ def disponibles(base=None):
             if os.path.isdir(os.path.join(base, r)) and os.listdir(os.path.join(base, r))]
 
 
+def resolucion_de(ruta_imagen):
+    """La resolución de una ruta ``.../<res>/<archivo>`` (de Windows o de macOS), o None."""
+    partes = (ruta_imagen or "").replace("\\", "/").split("/")
+    if len(partes) >= 2 and partes[-2] in RESOLUCIONES:
+        return partes[-2]
+    return None
+
+
 def clave(juego, mapa):
     return juego + "/" + mapa
 
@@ -154,3 +162,33 @@ def marcar(nodo, juego, mapa):
     if not cmds.attributeQuery(ATRIBUTO, node=nodo, exists=True):
         cmds.addAttr(nodo, longName=ATRIBUTO, dataType="string")
     cmds.setAttr(nodo + "." + ATRIBUTO, clave(juego, mapa), type="string")
+
+
+def reparar_rutas():
+    """Apunta a la carpeta de este ordenador las texturas que no se encuentran.
+
+    Una escena hecha en otro ordenador (en casa con macOS y en clase con
+    Windows, por ejemplo) guarda la ruta de la carpeta de Trepadora de allí.
+    Cada imagen que no existe aquí se busca en la carpeta de este ordenador con
+    la misma resolución que tenía. No entra en el historial de deshacer, para
+    que Ctrl+Z no vuelva a dejar las rutas rotas. Devuelve cuántas cambió.
+    """
+    from maya import cmds
+
+    deshacer = cmds.undoInfo(query=True, stateWithoutFlush=True)
+    if deshacer:
+        cmds.undoInfo(stateWithoutFlush=False)
+    try:
+        cambiados = 0
+        for nodo, atributo, juego, mapa in nodos_de_textura():
+            actual = cmds.getAttr(nodo + "." + atributo) or ""
+            if actual and os.path.isfile(actual):
+                continue
+            nueva = ruta(juego, mapa, resolucion_de(actual) or resolucion_actual())
+            if nueva and nueva != actual:
+                cmds.setAttr(nodo + "." + atributo, nueva, type="string")
+                cambiados += 1
+        return cambiados
+    finally:
+        if deshacer:
+            cmds.undoInfo(stateWithoutFlush=True)

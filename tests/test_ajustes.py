@@ -292,6 +292,45 @@ class PruebasPlugin(unittest.TestCase):
                 espacio["_anadir_scripts"](object())
                 self.assertEqual(os.path.normpath(sys.path[0]), scripts, devuelve)
 
+    def test_plugin_repara_las_texturas_al_abrir_escenas(self):
+        """Al cargarse escucha abrir e importar escenas, y al descargarse deja de hacerlo."""
+        import types
+        from unittest import mock
+
+        ruta = os.path.join(RAIZ, "plug-ins", instalar.PLUGIN + ".py")
+        avisos, info = {}, []
+
+        def anadir(mensaje, funcion):
+            avisos[len(avisos)] = (mensaje, funcion)
+            return len(avisos) - 1
+
+        plugin = types.SimpleNamespace(registerCommand=lambda *_a: None,
+                                       deregisterCommand=lambda *_a: None,
+                                       loadPath=lambda: os.path.dirname(ruta))
+        om = types.SimpleNamespace(
+            MPxCommand=object, MFnPlugin=lambda *_a: plugin,
+            MSceneMessage=types.SimpleNamespace(kAfterOpen="abrir", kAfterImport="importar",
+                                                addCallback=anadir),
+            MMessage=types.SimpleNamespace(removeCallback=avisos.pop),
+            MGlobal=types.SimpleNamespace(displayInfo=info.append, displayWarning=info.append))
+        api = types.SimpleNamespace(OpenMaya=om)
+        maya = types.SimpleNamespace(api=api, cmds=types.SimpleNamespace(about=lambda **_: True))
+        modulos = {"maya": maya, "maya.api": api, "maya.api.OpenMaya": om, "maya.cmds": maya.cmds}
+        with mock.patch.dict(sys.modules, modulos):
+            with open(ruta, encoding="utf-8") as f:
+                espacio = {"__name__": "trepadora_plugin"}
+                exec(compile(f.read(), ruta, "exec"), espacio)
+            espacio["initializePlugin"](object())
+            self.assertEqual(sorted(m for m, _f in avisos.values()), ["abrir", "importar"])
+            from trepadora import texturas
+
+            with mock.patch.object(texturas, "reparar_rutas", return_value=3):
+                avisos[0][1](None)
+            self.assertEqual(len(info), 1)
+            self.assertIn("3", info[0])
+            espacio["uninitializePlugin"](object())
+            self.assertEqual(avisos, {})
+
 
 if __name__ == "__main__":
     unittest.main()

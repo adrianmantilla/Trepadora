@@ -146,6 +146,28 @@ class PruebasMateriales(unittest.TestCase):
         # 4K no está: se queda con la más parecida y no cambia nada.
         self.assertEqual(texturas.cambiar_resolucion("4k"), 0)
 
+    def test_escena_de_otro_ordenador(self):
+        """Las rutas que no existen aquí se apuntan a esta carpeta, con su resolución."""
+        self._planta(1, resolucion_texturas="2k")
+        texturas.recordar_resolucion("1k")
+        rutas = self._rutas()
+        otra = {"C:\\Users\\alumno\\Trepadora\\texturas\\2k\\x.jpg": "2k",
+                "/Users/profe/Trepadora/texturas/512/x.jpg": "512",
+                "/ruta/rara/x.jpg": "1k"}
+        nodos = sorted(texturas.nodos_de_textura())
+        viejas = [sorted(otra)[i % len(otra)] for i in range(len(nodos))]
+        for (nodo, atributo, _j, _m), vieja in zip(nodos, viejas):
+            self.cmds.setAttr(nodo + "." + atributo, vieja, type="string")
+        self.assertEqual(texturas.reparar_rutas(), len(rutas))
+        for (nodo, atributo, juego, mapa), vieja in zip(nodos, viejas):
+            esperada = texturas.ruta(juego, mapa, otra[vieja], self.carpeta)
+            self.assertEqual(self.cmds.getAttr(nodo + "." + atributo), esperada)
+        # Las que ya existen no se tocan, y el historial de deshacer queda como estaba.
+        self.assertEqual(texturas.reparar_rutas(), 0)
+        self.assertTrue(self.escena.deshacer)
+        self.assertEqual(texturas.resolucion_de("a/b/4k/c.jpg"), "4k")
+        self.assertIsNone(texturas.resolucion_de("c.jpg"))
+
     def test_sin_texturas_la_planta_sale_igual(self):
         shutil.rmtree(self.carpeta)
         os.makedirs(self.carpeta)

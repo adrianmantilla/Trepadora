@@ -32,6 +32,7 @@ class Escena(object):
         self.conexiones = []    # (nodo origen, atributo, nodo destino, atributo)
         self.arnold = False     # si MtoA está cargado
         self.opciones = {}      # optionVar
+        self.deshacer = True    # undoInfo(stateWithoutFlush)
 
     # ------------------------------------------------------------- nombres
     def ruta(self, nodo):
@@ -251,11 +252,17 @@ def instalar():
     def warning(texto):
         e.avisos.append(texto)
 
+    def undoInfo(query=False, stateWithoutFlush=None, **_):
+        if query:
+            return e.deshacer
+        e.deshacer = stateWithoutFlush
+
     for funcion in (objExists, ls, nodeType, group, rename, parent, listRelatives, setAttr,
                     getAttr, addAttr, attributeQuery, select, delete, shadingNode, sets,
                     connectAttr, listConnections, particle, saveInitialState,
                     particleInstancer, duplicate, xform, exactWorldBoundingBox, pluginInfo,
-                    colorManagementPrefs, warning, isConnected, polyColorSet, optionVar):
+                    colorManagementPrefs, warning, isConnected, polyColorSet, optionVar,
+                    undoInfo):
         setattr(cmds, funcion.__name__, funcion)
 
     om = types.ModuleType("maya.api.OpenMaya")
