@@ -112,11 +112,24 @@ def instalar(carpeta_modulos=None, estante=True, abrir=True, dialogo=True):
             _crear_estante(cmds, mel, t)
         if abrir:
             menu.abrir()
-        if dialogo:
-            cmds.confirmDialog(title=t("ventana_titulo"),
-                               message=t("instalado", carpeta=RAIZ, mod=ruta_mod),
-                               button=[t("boton_aceptar")])
+    _guardar_preferencias(cmds)
+    if dialogo and not cmds.about(batch=True):
+        cmds.confirmDialog(title=t("ventana_titulo"),
+                           message=t("instalado", carpeta=RAIZ, mod=ruta_mod),
+                           button=[t("boton_aceptar")])
     return {"mod": ruta_mod, "plugin": plugin, "version": version()}
+
+
+def _guardar_preferencias(cmds):
+    """Guarda ya la carga automática del plug-in y el estante.
+
+    Maya solo guarda sus preferencias al salir bien; si se cuelga o se fuerza
+    el cierre justo después de instalar, sin esto Trepadora no se cargaría sola.
+    """
+    try:
+        cmds.savePrefs(general=True, pluginPrefs=True)
+    except RuntimeError:
+        pass
 
 
 def ventana_abierta():
@@ -144,6 +157,7 @@ def desinstalar(carpeta_modulos=None):
                                    "shelf_{}.mel".format(ESTANTE))
     if os.path.exists(archivo_estante):
         os.remove(archivo_estante)
+    _guardar_preferencias(cmds)
     return ruta
 
 

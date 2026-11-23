@@ -103,7 +103,9 @@ def _curvas_vista_previa(v):
 def instalar_prueba():
     import instalar
 
-    modulos = os.path.join(_SALIDA, "modules")
+    # Con una carpeta de preferencias aparte (MAYA_APP_DIR), en su carpeta de módulos, como
+    # haría el instalador de verdad; si no, en la carpeta de salida, para no tocar nada.
+    modulos = None if os.environ.get("MAYA_APP_DIR") else os.path.join(_SALIDA, "modules")
     datos = instalar.instalar(carpeta_modulos=modulos, estante=True, abrir=False, dialogo=False)
     from trepadora import menu
 
