@@ -40,6 +40,8 @@ from superficies import Cajas  # noqa: E402
 from trepadora import prototipo, sesion as ses, superficie_maya  # noqa: E402
 from trepadora import ajustes as aj  # noqa: E402
 from trepadora.hojas import ParametrosHojas, colocar_hojas  # noqa: E402
+from trepadora import vectores as vec  # noqa: E402
+from trepadora.zonas import Zona  # noqa: E402
 from trepadora.ui import ventana  # noqa: E402
 
 
@@ -48,6 +50,37 @@ def _cajas(nombres):
 
 
 superficie_maya.SuperficieMaya = _cajas
+
+
+def _zona(nombre):
+    caja = cmds._caja(cmds._corto(nombre))
+    return Zona.desde_caja(caja[0], caja[1], nombre=cmds._corto(nombre)) if caja else None
+
+
+def _puntos_de_curva(nombre, separacion=None, cantidad=None, maximo=4000):
+    # La curva falsa es una polilínea: se reparte a lo largo igual que en Maya.
+    forma = cmds.listRelatives(nombre, shapes=True) or []
+    lista = cmds.nodos[forma[0]].get("lista", []) if forma else []
+    if len(lista) < 2:
+        return []
+    tramos = [vec.distancia(a, b) for a, b in zip(lista, lista[1:])]
+    largo = sum(tramos)
+    if cantidad is None:
+        cantidad = int(largo / max(separacion or 1.0, 1e-6)) + 1
+    cantidad = max(2, min(cantidad, maximo))
+    puntos, k, recorrido = [], 0, 0.0
+    for i in range(cantidad):
+        objetivo = largo * i / (cantidad - 1)
+        while k < len(tramos) - 1 and recorrido + tramos[k] < objetivo:
+            recorrido += tramos[k]
+            k += 1
+        f = 0.0 if tramos[k] <= 0 else min(1.0, (objetivo - recorrido) / tramos[k])
+        puntos.append(vec.suma(lista[k], vec.escala(vec.resta(lista[k + 1], lista[k]), f)))
+    return puntos
+
+
+superficie_maya.zona_de = _zona
+superficie_maya.puntos_de_curva = _puntos_de_curva
 
 
 def _punto(self, x, y, panel=None):
@@ -61,15 +94,29 @@ def _punto(self, x, y, panel=None):
 ses.Sesion.punto_en_superficie = _punto
 
 
+def _punto_de_planta(self, x, y, panel=None):
+    # x, y = coordenadas de mundo frente al muro: el punto de planta más cercano a (x, y).
+    mejor = None
+    for i, rama in enumerate(self._crecimiento.ramas):
+        for k, q in enumerate(rama.puntos):
+            d = (q[0] - x) ** 2 + (q[1] - y) ** 2
+            if d < 4.0 and (mejor is None or d < mejor[0]):
+                mejor = (d, i, k)
+    return (mejor[1], mejor[2]) if mejor else None
+
+
+ses.Sesion._punto_de_planta_bajo = _punto_de_planta
+
+
 def _planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instancias=True,
             forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None, lados=None,
-            resumen=None):
+            resumen=None, raices=0.5):
     datos = dict(ajustes_hojas)
     datos["tamano"] = paso * 2.4 * datos.get("tamano", 1.0)
     hojas = colocar_hojas(crecimiento, ParametrosHojas(**datos))
     grupo = cmds.group(empty=True, name=prototipo.GRUPO_PLANTA)
     LLAMADAS.append(dict(lados=lados, forma=forma_hoja, tallo=tipo_tallo, propia=hoja_propia,
-                         instancias=instancias, semilla=semilla, grosor=grosor))
+                         instancias=instancias, semilla=semilla, grosor=grosor, raices=raices))
     if resumen is not None:
         resumen.update(hojas=len(hojas), modelos=49 if instancias else 0)
     return grupo
@@ -318,6 +365,103 @@ def p_sin_origen():
     print("   mensaje:", v.mensaje.text())
 
 
+def p_zonas_y_guia():
+    # Una caja delante del muro tapa una ventana.
+    caja = cmds.polyCube(name="ventana_caja", width=60, height=60, depth=13)[0]
+    cmds.move(-20, 70, 5.5, caja)
+    cmds.select(clear=True)
+    v.boton_zonas.click()
+    comprobar(v.sesion.zonas == [] and "Zonas" in v.mensaje.text(),
+              "sin selección, Zonas avisa: " + v.mensaje.text())
+    cmds.select(caja)
+    v.boton_zonas.click()
+    print("   zonas:", v.estado_zonas.text(), "| mensaje:", v.mensaje.text())
+    comprobar(v.sesion.zonas == ["|ventana_caja"], "zona elegida")
+    comprobar(v.boton_quitar_zonas.isEnabled(), "× de zonas activo")
+    v.controles["pasos"].casilla.setValue(260)
+    v.boton_crecer.click()
+    zona = _zona(caja)
+    puntos = [q for r in v.sesion._crecimiento.ramas for q in r.puntos]
+    comprobar(puntos and not [q for q in puntos if zona.dentro(q)],
+              "nada dentro de la zona ({} puntos)".format(len(puntos)))
+    comprobar(v.sesion.al_dia(), "al día tras crecer con la zona")
+    cmds.move(-20, 80, 5.5, caja)
+    comprobar(not v.sesion.al_dia(), "mover la caja pide volver a crecer")
+    v.boton_crecer.click()
+    # Elegir de superficie la caja junto con el muro no la vuelve superficie.
+    antes = list(v.sesion.superficies)
+    cmds.select(antes + [caja])
+    v.boton_superficie.click()
+    comprobar(v.sesion.superficies == antes, "la zona no cuenta como superficie")
+
+    # Curva guía de izquierda a derecha por el muro, sin orígenes.
+    curva = cmds.curve(degree=1, point=[(-90, 20, 6), (0, 25, 6), (90, 20, 6)], name="guia")
+    cmds.select(curva)
+    v.boton_guia.click()
+    print("   guía:", v.estado_guia.text(), "| origen:", v.estado_origen.text(),
+          "| mensaje:", v.mensaje.text())
+    comprobar(v.sesion.guias == ["|guia"], "guía elegida")
+    comprobar(not v.sesion.al_dia(), "elegir la guía pide volver a crecer")
+    v.boton_crecer.click()
+    c = v.sesion._crecimiento
+    inicio = c.ramas[0].puntos[0]
+    comprobar(vec.distancia(inicio, (-90, 20, 6)) < 10, "nace al principio de la guía: {}".format(
+        [round(x, 1) for x in inicio]))
+    comprobar(max(q[0] for q in c.ramas[0].puntos) > 60, "el tallo sigue la guía hacia la derecha")
+    print("   x máxima del tallo principal:", round(max(q[0] for q in c.ramas[0].puntos), 1))
+    otra = ses.Sesion()
+    comprobar(otra.zonas == ["|ventana_caja"] and otra.guias == ["|guia"],
+              "la escena recuerda zonas y guía")
+    v.boton_malla.click()
+    comprobar(v.sesion.ultima_planta and cmds.objExists(v.sesion.ultima_planta),
+              "crea la malla con zona y guía")
+    v.boton_quitar_zonas.click()
+    v.boton_quitar_guia.click()
+    comprobar(v.sesion.zonas == [] and v.sesion.guias == [], "× quita zonas y guía")
+    comprobar(ses.Sesion().zonas == [], "y la escena lo recuerda")
+    comprobar(not textos_crudos(v), "sin claves sin traducir")
+
+
+def p_recortar():
+    comprobar(not v.boton_recortar.isEnabled() or v.sesion.hay_crecimiento(),
+              "Recortar solo con planta")
+    v.controles["pasos"].casilla.setValue(200)
+    v.boton_crecer.click()
+    comprobar(v.boton_recortar.isEnabled(), "Recortar activo tras crecer")
+    c = v.sesion._crecimiento
+    grupo_antes = v.sesion.vista_previa
+    version_antes = cmds.getAttr(grupo_antes + "." + ses.ATR_VERSION)
+    total = c.total_puntos
+    tronco = c.ramas[0]
+    k = len(tronco.puntos) // 2
+    q = tronco.puntos[k]
+    v._al_recortar(q[0], q[1])
+    print("   mensaje:", v.mensaje.text(), "| puntos:", total, "->", c.total_puntos)
+    comprobar(c.total_puntos < total and len(c.ramas[0].puntos) <= k + 1, "recorta el tallo")
+    comprobar(v.sesion.al_dia(), "la planta recortada sigue al día")
+    version = cmds.getAttr(v.sesion.vista_previa + "." + ses.ATR_VERSION)
+    comprobar(version != version_antes, "vista previa nueva")
+    v._al_recortar(5000, 5000)
+    comprobar("ninguna rama" in v.mensaje.text(), "clic fuera avisa: " + v.mensaje.text())
+    # Ctrl+Z en Maya devuelve el grupo de la vista previa de antes; aquí se imita.
+    cmds.delete(v.sesion.vista_previa)
+    viejo = cmds.group(empty=True, name=prototipo.GRUPO_VISTA_PREVIA)
+    cmds.addAttr(viejo, longName=ses.ATR_VERSION, dataType="string")
+    cmds.setAttr(viejo + "." + ses.ATR_VERSION, version_antes, type="string")
+    v._deshecho()
+    comprobar(v.sesion._crecimiento.total_puntos == total, "deshacer devuelve la rama ({})".format(
+        v.sesion._crecimiento.total_puntos))
+    # Y rehacer la vuelve a quitar.
+    cmds.delete(viejo)
+    nuevo = cmds.group(empty=True, name=prototipo.GRUPO_VISTA_PREVIA)
+    cmds.addAttr(nuevo, longName=ses.ATR_VERSION, dataType="string")
+    cmds.setAttr(nuevo + "." + ses.ATR_VERSION, version, type="string")
+    v._deshecho()
+    comprobar(v.sesion._crecimiento.total_puntos < total, "rehacer la vuelve a quitar")
+    v.boton_malla.click()
+    comprobar("Planta creada" in v.mensaje.text(), "crea la malla recortada: " + v.mensaje.text())
+
+
 def p_guardar_preajuste():
     original = QtWidgets.QInputDialog.getText
     QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("Mi hiedra", True))
@@ -373,6 +517,7 @@ for nombre, f in [("abrir", p_abrir), ("superficie", p_superficie), ("origenes",
                   ("preajuste", p_preajuste), ("malla", p_malla), ("reabrir", p_reabrir),
                   ("ajustes_planta", p_ajustes_planta), ("hoja_propia", p_hoja_propia),
                   ("reiniciar", p_reiniciar), ("sin_origen", p_sin_origen),
+                  ("zonas_y_guia", p_zonas_y_guia), ("recortar", p_recortar),
                   ("guardar_preajuste", p_guardar_preajuste), ("escena_prueba", p_escena_prueba),
                   ("carga_alta", p_carga_alta)]:
     paso(nombre, f)

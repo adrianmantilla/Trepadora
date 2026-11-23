@@ -14,7 +14,10 @@ avanza una distancia fija. La dirección del avance mezcla varias fuerzas:
 * luz: tendencia a subir por las paredes (hacia ``direccion_luz``);
 * adherencia: si la rama está cerca de la superficie, se pega y la sigue;
 * gravedad: si la rama pierde el apoyo, cuelga y busca volver a agarrarse;
-* espacio: las ramas se apartan de las zonas ya ocupadas, para repartirse.
+* espacio: las ramas se apartan de las zonas ya ocupadas, para repartirse;
+* guía (opcional): siguen una curva dibujada por el estudiante (``guias.py``);
+* zonas prohibidas (opcional): rodean cajas por las que no deben crecer, como
+  una ventana o una puerta, y paran si entran en una (``zonas.py``).
 
 Cada paso una rama solo puede girar un ángulo máximo, lo que evita bucles.
 Las ramas hijas brotan a lo largo de la madre, separadas entre sí.
@@ -22,12 +25,15 @@ Al terminar, ``grosores()`` calcula el radio de cada punto: el tallo es más
 grueso donde sostiene más planta y se afina hacia las puntas.
 """
 
+import dataclasses
 import math
 import random
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import vectores as v
+from .guias import Guias
+from .zonas import Zonas
 
 Vector = Tuple[float, float, float]
 
@@ -108,6 +114,12 @@ class Parametros:
     ramillas: float = 0.0
     # Largo máximo de una ramilla, en puntos.
     largo_ramilla: int = 12
+    # Fuerza con la que las ramas siguen las curvas guía, si hay (0 = nada).
+    guia: float = 0.6
+    # Hasta qué distancia de una guía la notan las ramas, en pasos.
+    alcance_guia: float = 6.0
+    # Pasos por delante a los que una rama nota una zona prohibida y la rodea.
+    alcance_zonas: float = 5.0
     # Tope de seguridad para no colgar Maya.
     limite_puntos: int = 60000
 
@@ -123,7 +135,8 @@ class Rama:
     # Índice del punto de la madre del que brota.
     indice_en_madre: int = 0
     viva: bool = True
-    # Por qué paró: "largo", "aire", "suelo", "espacio", "limite" o "" si sigue viva.
+    # Por qué paró: "largo", "aire", "suelo", "espacio", "zona", "limite",
+    # "recortada" o "" si sigue viva.
     motivo: str = ""
     pasos_sueltos: int = 0
     pasos_suelo: int = 0
@@ -150,6 +163,13 @@ class Rama:
     brotes: List[int] = field(default_factory=list)
     ramillas: List[int] = field(default_factory=list)
     hijas: List[int] = field(default_factory=list)
+
+
+def _copia(rama: Rama) -> Rama:
+    """Copia de una rama que no comparte listas con ella (los puntos son tuplas)."""
+    return dataclasses.replace(rama, puntos=list(rama.puntos), normales=list(rama.normales),
+                               brotes=list(rama.brotes), ramillas=list(rama.ramillas),
+                               hijas=list(rama.hijas))
 
 
 def consultar(superficie, punto: Vector) -> Tuple[Vector, Vector]:
@@ -206,9 +226,20 @@ class _Rejilla:
 class Crecimiento:
     """Hace crecer una o varias plantas sobre una superficie."""
 
-    def __init__(self, superficie, parametros: Optional[Parametros] = None):
+    def __init__(self, superficie, parametros: Optional[Parametros] = None, zonas=None,
+                 guias=None):
+        """``zonas``: un ``zonas.Zonas`` o una lista de ``zonas.Zona``.
+        ``guias``: listas de puntos, cada una del principio al final de su curva.
+        """
         self.superficie = superficie
         self.p = parametros or Parametros()
+        if zonas is not None and not isinstance(zonas, Zonas):
+            zonas = Zonas(zonas)
+        self.zonas = zonas if zonas else None
+        self.guias = (Guias(guias, self.p.alcance_guia * self.p.longitud_paso)
+                      if guias else None)
+        if self.guias is not None and not self.guias:
+            self.guias = None
         self.rng = random.Random(self.p.semilla)
         self.ramas: List[Rama] = []
         self.total_puntos = 0
@@ -307,6 +338,7 @@ class Crecimiento:
         d = v.suma(d, v.escala(rama.deriva, p.aleatoriedad * nervio))
         luz = p.luz * rama.luz_factor * (1.6 if principal else (0.0 if rama.cortina else 1.0))
 
+        tiron = self._tiron_guia(rama, punta)
         subida = None
         if rama.colgante:
             # Cuelga: sobre todo gravedad, un poco de vaivén y se separa algo
@@ -351,6 +383,8 @@ class Crecimiento:
             elif not principal and self._caida > 0.0:
                 peso = self._caida * 0.35 * min(1.0, len(rama.puntos) / 25.0)
                 d = v.suma(d, v.escala(v.tangente(v.ABAJO, normal), peso))
+            if tiron is not None:
+                d = v.suma(d, v.tangente(tiron, normal))
             # Quita parte de la componente que se aleja o se mete en la superficie.
             d = v.resta(d, v.escala(normal, v.punto(d, normal) * p.adherencia))
             # Acerca la punta a la distancia de separación.
@@ -362,6 +396,8 @@ class Crecimiento:
             d = v.suma(d, v.escala(v.ABAJO, p.gravedad * (0.5 + 0.5 * rama.pasos_sueltos)))
             if dist > v.EPS:
                 d = v.suma(d, v.escala(v.escala(hacia_sup, 1.0 / dist), p.adherencia))
+            if tiron is not None:
+                d = v.suma(d, v.escala(tiron, 0.5))
 
         # Se aparta de los puntos de otras ramas que tiene cerca (salvo su madre,
         # de la que acaba de brotar).
@@ -376,6 +412,8 @@ class Crecimiento:
                 d = v.suma(d, v.escala(lejos, p.evitar * (0.65 if rama.cortina else 1.0)))
 
         d = v.unitario(d) or rama.direccion
+        if self.zonas is not None:
+            d = self._rodear_zonas(punta, d, normal if pegada else None)
         d = v.limitar_giro(rama.direccion, d, self._giro_max, normal)
 
         nuevo = v.suma(punta, v.escala(d, p.longitud_paso))
@@ -398,6 +436,11 @@ class Crecimiento:
             # ramas se descuelguen.
             agarre = p.adherencia * max(0.0, 1.0 - 0.5 * p.gravedad)
             nuevo = v.suma(v.escala(nuevo, 1.0 - agarre), v.escala(pegado2, agarre))
+
+        if self.zonas is not None and self.zonas.dentro(nuevo):
+            # No crece dentro de una zona prohibida (una ventana, una puerta).
+            rama.viva, rama.motivo = False, "zona"
+            return
 
         if subida is not None:
             # Llega al pie de una pared: sube a ella y empieza a trepar.
@@ -672,6 +715,48 @@ class Crecimiento:
             return None
         return c2, n2
 
+    # ------------------------------------------------------- guías y zonas
+    def _tiron_guia(self, rama: Rama, punta: Vector) -> Optional[Vector]:
+        """Lo que tira de la rama la curva guía, ya con su fuerza (o None).
+
+        El tallo principal la sigue con más fuerza que sus ramas; lo que cuelga
+        por su peso no la nota.
+        """
+        if self.guias is None or self.p.guia <= 0.0 or rama.colgante or rama.cortina:
+            return None
+        tiron = self.guias.tiron(punta)
+        if tiron is None:
+            return None
+        direccion, fuerza = tiron
+        peso = self.p.guia * fuerza * (2.0 if rama.generacion == 0 else 0.8)
+        return v.escala(direccion, peso)
+
+    def _rodear_zonas(self, punta: Vector, d: Vector, normal: Optional[Vector]) -> Vector:
+        """Desvía la dirección ``d`` si unos pasos más allá hay una zona prohibida.
+
+        La rama se aparta de la zona y, sobre todo, se va hacia un lado (el
+        más alejado del centro de la zona), así la rodea en vez de pararse
+        delante. ``normal`` es la de la superficie si la rama va pegada a ella.
+        """
+        paso = self.p.longitud_paso
+        alcance = self.p.alcance_zonas * paso
+        delante = v.suma(punta, v.escala(d, 0.5 * alcance))
+        cerca = self.zonas.empuje(delante, alcance)
+        if cerca is None:
+            return d
+        fuera, fuerza, centro = cerca
+        if normal is not None:
+            fuera = v.tangente(fuera, normal)
+            lado = v.unitario(v.cruz(normal, d))
+        else:
+            lado = v.unitario(v.cruz(v.ARRIBA, d)) or v.perpendicular(d)
+        if lado is not None and v.punto(v.resta(centro, punta), lado) > 0.0:
+            lado = v.escala(lado, -1.0)
+        nueva = v.suma(d, v.escala(fuera, 1.2 * fuerza))
+        if lado is not None:
+            nueva = v.suma(nueva, v.escala(lado, 1.6 * fuerza))
+        return v.unitario(nueva) or d
+
     # ------------------------------------------------------------- utilidades
     def _sin_atravesar(self, punta: Vector, cercano: Vector, normal: Vector, q: Vector):
         """Si ``q`` queda dentro o al otro lado de una superficie, lo saca por el lado bueno.
@@ -709,6 +794,10 @@ class Crecimiento:
     def _consultar(self, punto: Vector) -> Tuple[Vector, Vector]:
         return consultar(self.superficie, punto)
 
+    def cercano(self, punto) -> Tuple[Vector, Vector]:
+        """Punto de la superficie más cercano a ``punto`` y su normal."""
+        return self._consultar(v.vec(punto))
+
     def _registrar(self, punto: Vector, rama: int) -> None:
         self._rejilla.anadir(punto, rama)
         h = v.punto(punto, self._luz)
@@ -731,9 +820,95 @@ class Crecimiento:
                 motivos[r.motivo] = motivos.get(r.motivo, 0) + len(r.puntos)
         return motivos
 
-    def curvas(self) -> List[Tuple[int, List[Vector]]]:
-        """Lista de (generación, puntos) de cada rama con al menos dos puntos."""
+    def curvas(self, con_indice: bool = False) -> List[tuple]:
+        """Lista de (generación, puntos) de cada rama con al menos dos puntos.
+
+        Con ``con_indice``, (índice de la rama, generación, puntos).
+        """
+        if con_indice:
+            return [(i, r.generacion, list(r.puntos)) for i, r in enumerate(self.ramas)
+                    if len(r.puntos) >= 2]
         return [(r.generacion, list(r.puntos)) for r in self.ramas if len(r.puntos) >= 2]
+
+    # ------------------------------------------------------------- recortar
+    def recortar(self, cortes) -> int:
+        """Corta ramas. Devuelve cuántos puntos se quitaron.
+
+        Cada corte es ``(rama, punto)``: la rama pierde ese punto y los que
+        siguen, junto con todo lo que brota de ahí en adelante, y deja de
+        crecer. Con ``punto`` 0 o 1 se va la rama entera.
+        """
+        quitar, desde = set(), {}
+        for i, k in cortes:
+            if not 0 <= i < len(self.ramas):
+                continue
+            k = max(0, int(k))
+            if k < 2:
+                quitar.add(i)
+            elif k < len(self.ramas[i].puntos):
+                desde[i] = min(desde.get(i, k), k)
+        # Lo que brota de un tramo quitado se va con él (la madre siempre va
+        # antes que sus hijas en la lista).
+        for i, rama in enumerate(self.ramas):
+            m = rama.madre
+            if m is not None and (m in quitar or (m in desde and rama.indice_en_madre >= desde[m])):
+                quitar.add(i)
+        for i in quitar:
+            desde.pop(i, None)
+        if not quitar and not desde:
+            return 0
+        sobran = {i: set(self.ramas[i].puntos[k:]) for i, k in desde.items()}
+        nuevo_indice: Dict[int, int] = {}
+        ramas: List[Rama] = []
+        for i, rama in enumerate(self.ramas):
+            if i in quitar:
+                continue
+            nuevo_indice[i] = len(ramas)
+            ramas.append(rama)
+            if i in desde:
+                k = desde[i]
+                del rama.puntos[k:]
+                del rama.normales[k:]
+                rama.brotes = [b for b in rama.brotes if b < k]
+                rama.ramillas = [b for b in rama.ramillas if b < k]
+                rama.viva, rama.motivo = False, "recortada"
+        for rama in ramas:
+            if rama.madre is not None:
+                rama.madre = nuevo_indice[rama.madre]
+            rama.hijas = [nuevo_indice[h] for h in rama.hijas if h in nuevo_indice]
+        self.ramas = ramas
+        # La rejilla conserva el orden en que se anotaron los puntos: si la
+        # planta sigue creciendo, lo hace igual que si nunca hubieran existido
+        # los puntos quitados... salvo por su ausencia.
+        antes = self.total_puntos
+        total = 0
+        for clave, lista in list(self._rejilla._celdas.items()):
+            quedan = [(q, nuevo_indice[r]) for q, r in lista
+                      if r in nuevo_indice and not (r in sobran and q in sobran[r])]
+            if quedan:
+                self._rejilla._celdas[clave] = quedan
+            else:
+                del self._rejilla._celdas[clave]
+            total += len(quedan)
+        self.total_puntos = total
+        alturas = [v.punto(q, self._luz) for r in self.ramas for q in r.puntos]
+        self._altura = [min(alturas), max(alturas)] if alturas else [None, None]
+        return antes - total
+
+    def foto(self) -> dict:
+        """Copia del estado, para volver a él con ``restaurar`` (deshacer un recorte)."""
+        return {"ramas": [_copia(r) for r in self.ramas], "rng": self.rng.getstate(),
+                "celdas": {k: list(l) for k, l in self._rejilla._celdas.items()},
+                "total": self.total_puntos, "altura": list(self._altura),
+                "limite": self.limite_alcanzado}
+
+    def restaurar(self, foto: dict) -> None:
+        self.ramas = [_copia(r) for r in foto["ramas"]]
+        self.rng.setstate(foto["rng"])
+        self._rejilla._celdas = {k: list(l) for k, l in foto["celdas"].items()}
+        self.total_puntos = foto["total"]
+        self._altura = list(foto["altura"])
+        self.limite_alcanzado = foto["limite"]
 
     def grosores(self, radio_base: float, radio_punta: float) -> List[List[float]]:
         """Radio de cada punto de cada rama.

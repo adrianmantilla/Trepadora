@@ -55,7 +55,7 @@ class PruebasControles(unittest.TestCase):
         self.assertEqual(hojas["semilla"], 7)
         self.assertEqual(crecimiento["gravedad"], 1.2)
         self.assertEqual(set(planta), {"grosor", "escala", "forma_hoja", "tipo_tallo",
-                                       "instancias", "lados"})
+                                       "instancias", "lados", "raices"})
 
     def test_ajustar_recorta_y_convierte(self):
         pasos = aj.POR_CLAVE["pasos"]
@@ -198,6 +198,26 @@ class PruebasTextos(unittest.TestCase):
         self.assertGreater(len(claves), 50)
         faltan = sorted(c for c in claves if c not in es)
         self.assertEqual(faltan, [])
+
+    def test_ingles_completo(self):
+        """en.json tiene las mismas claves que es.json, con los mismos huecos {…}."""
+        es = textos()
+        with open(os.path.join(os.path.dirname(ES), "en.json"), encoding="utf-8") as f:
+            en = json.load(f)
+        self.assertEqual(sorted(en), sorted(es))
+        for clave, texto in es.items():
+            self.assertEqual(sorted(re.findall(r"\{(\w+)\}", texto)),
+                             sorted(re.findall(r"\{(\w+)\}", en[clave])), clave)
+            self.assertTrue(en[clave].strip(), clave)
+        from trepadora import i18n
+        self.assertEqual(i18n.idiomas(), ["es", "en"])
+        try:
+            i18n.usar_idioma("en")
+            self.assertEqual(i18n.t("crecer"), "Grow")
+            self.assertEqual(i18n.t("superficie_varias", n=2, nombres="a, b"), "2 meshes: a, b")
+        finally:
+            i18n.usar_idioma("es")
+        self.assertEqual(i18n.t("crecer"), "Crecer")
 
     def test_cada_control_tiene_sus_textos(self):
         es = textos()

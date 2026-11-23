@@ -29,6 +29,17 @@ def usar_idioma(idioma):
     _idioma = idioma
 
 
+def idioma():
+    """El idioma activo (``es``, ``en``...)."""
+    return _idioma
+
+
+def idiomas():
+    """Los idiomas que hay en esta carpeta, el español primero."""
+    hay = sorted(os.path.splitext(a)[0] for a in os.listdir(_CARPETA) if a.endswith(".json"))
+    return sorted(hay, key=lambda i: (i != _IDIOMA_BASE, i))
+
+
 def t(clave, **valores):
     """Devuelve el texto de ``clave`` en el idioma activo, con ``valores`` sustituidos."""
     texto = _cargar(_idioma).get(clave) or _cargar(_IDIOMA_BASE).get(clave) or clave

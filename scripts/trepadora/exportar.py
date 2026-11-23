@@ -9,6 +9,10 @@ Al exportar se hace una copia «horneada» con dos objetos limpios:
 
 Se exporta la copia y se borra: la escena queda como estaba.
 
+Para juegos se pueden exportar las hojas ligeras: cada hoja es una tarjeta
+de seis vértices doblada por el nervio, y la silueta la pone la transparencia
+del mapa de color (``<juego>_color.png``). Pesa unas doce veces menos.
+
 Junto al archivo se copian las texturas de la resolución elegida, en la carpeta
 ``<nombre>_texturas``: los mapas de Trepadora y además un mapa de color
 (``<juego>_color.jpg``) que ya lleva el tono medio de la planta, para los
@@ -25,7 +29,7 @@ import re
 import shutil
 import tempfile
 
-from . import geometria, texturas
+from . import geometria, texturas, vectores
 
 FORMATOS = ("fbx", "abc")
 ATR_PLANTA = "trepadoraAjustes"
@@ -108,6 +112,198 @@ def hornear_hojas(modelos, matrices_modelo, posiciones, giros, escalas, indices,
     return malla
 
 
+# ------------------------------------------------------------ hojas ligeras
+# Cuánto se levantan los bordes de la tarjeta sobre el nervio (por cada unidad
+# de semiancho): la hoja ligera se dobla en V como las de verdad.
+PLIEGUE_TARJETA = 0.3
+# Margen alrededor de la silueta en la tarjeta (en UV), para el borde suavizado.
+MARGEN_TARJETA = 0.01
+
+
+def _resolver3(m, b):
+    """Solución de ``m·x = b`` (3×3), o None si ``m`` no tiene inversa."""
+    (a, b_, c), (d, e, f), (g, h, i) = m
+    det = a * (e * i - f * h) - b_ * (d * i - f * g) + c * (d * h - e * g)
+    if abs(det) < 1e-12:
+        return None
+    inv = ((e * i - f * h, c * h - b_ * i, b_ * f - c * e),
+           (f * g - d * i, a * i - c * g, c * d - a * f),
+           (d * h - e * g, b_ * g - a * h, a * e - b_ * d))
+    return [sum(inv[r][k] * b[k] for k in range(3)) / det for r in range(3)]
+
+
+def plano_de_uv(puntos, uvs):
+    """``(origen, eje_u, eje_v)``: la posición como función de la UV, ``p = o + u·eu + v·ev``.
+
+    Se ajusta por mínimos cuadrados a los vértices de una hoja: es el plano en
+    el que la textura se ve como en la hoja. None si las UVs no lo permiten.
+    """
+    s = [[0.0] * 3 for _ in range(3)]
+    for u, w in uvs:
+        fila = (1.0, u, w)
+        for r in range(3):
+            for c in range(3):
+                s[r][c] += fila[r] * fila[c]
+    ejes = []
+    for e in range(3):
+        b = [0.0, 0.0, 0.0]
+        for p, (u, w) in zip(puntos, uvs):
+            b[0] += p[e]
+            b[1] += p[e] * u
+            b[2] += p[e] * w
+        x = _resolver3(s, b)
+        if x is None:
+            return None
+        ejes.append(x)
+    origen = tuple(x[0] for x in ejes)
+    eje_u = tuple(x[1] for x in ejes)
+    eje_v = tuple(x[2] for x in ejes)
+    return origen, eje_u, eje_v
+
+
+def tarjeta(puntos, uvs, colores=None, nervio=0.5):
+    """La hoja ligera de una hoja: seis vértices, dos caras dobladas por el nervio.
+
+    ``puntos`` y ``uvs`` son los de cada esquina de cara de la hoja (o de cada
+    vértice); la tarjeta cubre su rectángulo de UV, con el nervio en
+    ``u = nervio``, y lleva el color medio de ``colores``. None si no se puede.
+    """
+    plano = plano_de_uv(puntos, uvs)
+    if plano is None:
+        return None
+    origen, eu, ev = plano
+    m = MARGEN_TARJETA
+    u0 = max(0.0, min(u for u, _ in uvs) - m)
+    u1 = min(1.0, max(u for u, _ in uvs) + m)
+    v0 = max(0.0, min(w for _, w in uvs) - m)
+    v1 = min(1.0, max(w for _, w in uvs) + m)
+    um = nervio if u0 < nervio < u1 else 0.5 * (u0 + u1)
+    cara = vectores.cruz(eu, ev)
+    cara = vectores.unitario(cara)
+    if cara is None:
+        return None
+    color = color_medio(_con_colores(colores)) if colores else (0.5, 0.5, 0.5)
+    malla = geometria.Malla()
+    for w in (v0, v1):
+        for u in (u0, um, u1):
+            p = tuple(origen[e] + u * eu[e] + w * ev[e] for e in range(3))
+            alto = PLIEGUE_TARJETA * abs(u - um) * vectores.largo(eu)
+            p = tuple(p[e] + cara[e] * alto for e in range(3))
+            malla.vertice(p, color)
+            malla.uv(u, w)
+    malla.cara(0, 1, 4, 3, uvs=(0, 1, 4, 3))
+    malla.cara(1, 2, 5, 4, uvs=(1, 2, 5, 4))
+    return malla
+
+
+def _con_colores(colores):
+    malla = geometria.Malla()
+    malla.colores = list(colores)
+    return malla
+
+
+def esquinas(malla):
+    """Puntos, UVs y colores de cada esquina de cara de ``malla`` (para ``tarjeta``)."""
+    puntos = [malla.vertices[i] for i in malla.indices]
+    if malla.uvs and len(malla.uv_indices) == len(malla.indices):
+        uvs = [malla.uvs[i] for i in malla.uv_indices]
+    elif malla.uvs and len(malla.uvs) == len(malla.vertices):
+        uvs = [malla.uvs[i] for i in malla.indices]
+    else:
+        return None
+    colores = [malla.colores[i] for i in malla.indices] if malla.colores else None
+    return puntos, uvs, colores
+
+
+def hojas_sueltas(malla):
+    """Cada hoja de una malla de hojas (sus caras unidas), como una ``geometria.Malla``."""
+    padre = list(range(len(malla.vertices)))
+
+    def raiz(a):
+        while padre[a] != a:
+            padre[a] = padre[padre[a]]
+            a = padre[a]
+        return a
+
+    inicio = 0
+    caras = []
+    for n in malla.conteos:
+        ids = malla.indices[inicio:inicio + n]
+        caras.append((inicio, n))
+        for i in ids[1:]:
+            ra, rb = raiz(ids[0]), raiz(i)
+            if ra != rb:
+                padre[rb] = ra
+        inicio += n
+    grupos = {}
+    for inicio, n in caras:
+        grupos.setdefault(raiz(malla.indices[inicio]), []).append((inicio, n))
+    con_uv = malla.uvs and len(malla.uv_indices) == len(malla.indices)
+    hojas = []
+    for lista in grupos.values():
+        hoja = geometria.Malla()
+        nuevo = {}
+        for inicio, n in lista:
+            ids = []
+            for i in malla.indices[inicio:inicio + n]:
+                if i not in nuevo:
+                    nuevo[i] = hoja.vertice(malla.vertices[i],
+                                            malla.colores[i] if malla.colores else (0.5,) * 3)
+                ids.append(nuevo[i])
+            uvs = None
+            if con_uv:
+                uvs = [hoja.uv(*malla.uvs[j]) for j in malla.uv_indices[inicio:inicio + n]]
+            hoja.cara(*ids, uvs=uvs)
+        hojas.append(hoja)
+    return hojas
+
+
+def hojas_ligeras(hojas):
+    """Una malla con la tarjeta de cada hoja de ``hojas`` (una lista de mallas)."""
+    malla = geometria.Malla()
+    for hoja in hojas:
+        datos = esquinas(hoja)
+        carta = tarjeta(*datos) if datos else None
+        if carta is not None:
+            anadir(malla, carta)
+    return malla
+
+
+# Cuánto más ancha que su perfil es la silueta de una hoja ligera: cada hoja
+# varía algo de ancho y es un poco asimétrica (ver ``geometria._lamina``).
+HOLGURA_SILUETA = 1.1
+
+
+def mascara_alfa(forma, lado, holgura=HOLGURA_SILUETA):
+    """Bytes (``lado``×``lado``, de arriba abajo) con la silueta de la hoja ``forma``.
+
+    255 dentro de la hoja y 0 fuera, con el borde suavizado un píxel. Las UVs
+    de las hojas son las de ``geometria.uv_hoja``.
+    """
+    perfil = geometria.PERFILES_HOJA[forma]
+    escala = geometria.ESCALA_UV[forma]
+
+    def ancho(y):
+        for (y0, w0), (y1, w1) in zip(perfil, perfil[1:]):
+            if y0 <= y <= y1:
+                return w0 + (w1 - w0) * ((y - y0) / (y1 - y0) if y1 > y0 else 0.0)
+        return 0.0
+
+    filas = []
+    for j in range(lado):
+        v = 1.0 - (j + 0.5) / lado
+        semiancho = holgura * ancho((v - 0.5) * escala + 0.5) / escala * lado   # en píxeles
+        centro = 0.5 * lado
+        fila = bytearray(lado)
+        if semiancho > 0.0:
+            a, b = centro - semiancho, centro + semiancho
+            for i in range(max(0, int(a)), min(lado, int(b) + 1)):
+                cubre = max(0.0, min(i + 1.0, b) - max(float(i), a))
+                fila[i] = int(round(255 * min(1.0, cubre)))
+        filas.append(bytes(fila))
+    return b"".join(filas)
+
+
 def color_medio(malla, defecto=(0.5, 0.5, 0.5)):
     """Media de los colores de vértice que tienen color."""
     validos = [c for c in malla.colores if min(c[:3]) >= 0.0]
@@ -172,14 +368,16 @@ def mapas_a_copiar(juegos, resolucion, base=None):
     return lista
 
 
-def nombre_color(juego):
-    return juego + "_color.jpg"
+def nombre_color(juego, alfa=False):
+    """El mapa de color: JPEG, o PNG con la silueta en la transparencia (hojas ligeras)."""
+    return juego + ("_color.png" if alfa else "_color.jpg")
 
 
-def guardar_color(detalle, destino, tinte, lineal=True):
+def guardar_color(detalle, destino, tinte, lineal=True, forma=None):
     """Escribe el mapa de color a partir del de detalle. Devuelve True si pudo.
 
-    Usa Qt (el de Maya) solo para leer y guardar el JPEG.
+    Con ``forma`` (de hoja), el mapa lleva su silueta en el canal alfa y se
+    guarda en PNG. Usa Qt (el de Maya) solo para leer y guardar la imagen.
     """
     try:
         try:
@@ -197,6 +395,14 @@ def guardar_color(detalle, destino, tinte, lineal=True):
     if fila != ancho:
         datos = b"".join(datos[y * fila:y * fila + ancho] for y in range(alto))
     rgb = tenir(datos, tablas_color(tinte, lineal))
+    if forma is not None and ancho == alto:
+        rgba = bytearray(4 * ancho * alto)
+        for canal in range(3):
+            rgba[canal::4] = rgb[canal::3]
+        rgba[3::4] = mascara_alfa(forma, ancho)
+        nueva = QtGui.QImage(bytes(rgba), ancho, alto, 4 * ancho,
+                             QtGui.QImage.Format.Format_RGBA8888).copy()
+        return bool(nueva.save(destino, "PNG"))
     nueva = QtGui.QImage(rgb, ancho, alto, 3 * ancho, QtGui.QImage.Format.Format_RGB888).copy()
     # Calidad 91 o más: Qt guarda entonces el color sin submuestrear (4:4:4).
     return bool(nueva.save(destino, "JPG", 92))
@@ -321,14 +527,28 @@ def instanciador_de(planta):
     return None
 
 
-def hojas_de(planta):
-    """Las hojas de la planta en una malla (de sus instancias o de su malla de hojas)."""
+def _ligera(malla):
+    """La tarjeta de una hoja modelo (o la hoja tal cual si no se puede)."""
+    datos = esquinas(malla)
+    carta = tarjeta(*datos) if datos else None
+    return carta if carta is not None else malla
+
+
+def hojas_de(planta, ligeras=False):
+    """Las hojas de la planta en una malla (de sus instancias o de su malla de hojas).
+
+    Con ``ligeras``, cada hoja es una tarjeta (ver ``tarjeta``), salvo si las
+    hojas no son de Trepadora (una hoja propia): sus UVs no siguen la silueta.
+    """
     cmds = _cmds()
     malla_hojas = _hijo(planta, "trepadora_hojas", "transform")
     instanciador = instanciador_de(planta)
     if instanciador is None:
         if malla_hojas and cmds.listRelatives(malla_hojas, shapes=True, type="mesh"):
-            return leer_malla(malla_hojas), [malla_hojas]
+            malla = leer_malla(malla_hojas)
+            if ligeras and _juego_de([malla_hojas]):
+                malla = hojas_ligeras(hojas_sueltas(malla))
+            return malla, [malla_hojas]
         return geometria.Malla(), []
     entradas = cmds.listConnections(instanciador + ".inputPoints", source=True,
                                     destination=False, shapes=True) or []
@@ -342,6 +562,8 @@ def hojas_de(planta):
     if forma is None or not modelos:
         return geometria.Malla(), []
     mallas = [leer_malla(m, mundo=False) if m else geometria.Malla() for m in modelos]
+    if ligeras and _juego_de([m for m in modelos if m]):
+        mallas = [_ligera(m) for m in mallas]
     # La matriz propia de cada modelo, sin la de sus padres: la de la planta
     # ya llega con la del instanciador, que cuelga de ella.
     matrices = [_matriz(m, mundo=False) if m else IDENTIDAD for m in modelos]
@@ -407,8 +629,12 @@ def _crear(nombre, malla, padre):
     return _bajo(padre, cmds.parent(ruta, padre)[0])
 
 
-def _material(nombre, transform, color, carpeta, archivo_color, archivo_normal):
-    """Lambert con el mapa de color y el de normales (rutas dentro de ``carpeta``)."""
+def _material(nombre, transform, color, carpeta, archivo_color, archivo_normal, alfa=False):
+    """Lambert con el mapa de color y el de normales (rutas dentro de ``carpeta``).
+
+    Con ``alfa``, la transparencia del mapa de color recorta la silueta de las
+    hojas ligeras.
+    """
     cmds = _cmds()
     creados = []
     material = cmds.shadingNode("lambert", asShader=True, name=nombre)
@@ -420,6 +646,9 @@ def _material(nombre, transform, color, carpeta, archivo_color, archivo_normal):
         cmds.setAttr(imagen + ".fileTextureName", os.path.join(carpeta, archivo_color),
                      type="string")
         cmds.connectAttr(imagen + ".outColor", material + ".color", force=True)
+        if alfa:
+            cmds.connectAttr(imagen + ".outTransparency", material + ".transparency",
+                             force=True)
     if archivo_normal and os.path.isfile(os.path.join(carpeta, archivo_normal)):
         imagen = cmds.shadingNode("file", asTexture=True, name=nombre + "_normal")
         relieve = cmds.shadingNode("bump2d", asUtility=True, name=nombre + "_relieve")
@@ -453,23 +682,26 @@ def nombre_de_grupo(ruta):
     return limpio if not limpio[0].isdigit() else "planta_" + limpio
 
 
-def hornear(planta, carpeta=None, resolucion=None, lineal=True, nombre=None):
+def hornear(planta, carpeta=None, resolucion=None, lineal=True, nombre=None, ligeras=False):
     """Crea la copia horneada de ``planta`` y, con ``carpeta``, copia allí las texturas.
 
-    Devuelve ``(grupo, creados, informe)``: el grupo nuevo, todos los nodos
-    creados (para borrarlos) y un diccionario con lo que se hizo.
+    Con ``ligeras``, las hojas son tarjetas (para juegos) y su mapa de color
+    lleva la silueta en la transparencia. Devuelve ``(grupo, creados,
+    informe)``: el grupo nuevo, todos los nodos creados (para borrarlos) y un
+    diccionario con lo que se hizo.
     """
     cmds = _cmds()
     resolucion = resolucion or texturas.resolucion_actual()
-    hojas, modelos = hojas_de(planta)
+    hojas, modelos = hojas_de(planta, ligeras)
     tallos = tallos_de(planta)
     juego_hojas = _juego_de(modelos)
+    ligeras = bool(ligeras and juego_hojas)
     grupo = cmds.group(empty=True, name=nombre or PREFIJO)
     grupo = (cmds.ls(grupo, long=True) or [grupo])[0]
     creados = [grupo]
     informe = {"hojas_vertices": len(hojas.vertices), "tallos_vertices": len(tallos.vertices),
                "juego_hojas": juego_hojas, "resolucion": resolucion, "texturas": [],
-               "sin_color": []}
+               "sin_color": [], "ligeras": ligeras}
     piezas = []
     if tallos.vertices:
         piezas.append(("tallos", tallos, "corteza"))
@@ -486,18 +718,23 @@ def hornear(planta, carpeta=None, resolucion=None, lineal=True, nombre=None):
         transform = _crear(nombre, malla, grupo)
         tinte = color_medio(malla)
         archivo_color = archivo_normal = None
+        # Con hojas ligeras, la silueta de la hoja va en el mapa de color.
+        forma = juego[len("hoja_"):] if ligeras and juego and juego.startswith("hoja_") else None
+        if forma not in geometria.PERFILES_HOJA:
+            forma = None
         if carpeta and juego:
             detalle = os.path.join(carpeta, texturas.archivo(juego, "detalle"))
+            archivo = nombre_color(juego, alfa=forma is not None)
             if os.path.isfile(detalle) and guardar_color(
-                    detalle, os.path.join(carpeta, nombre_color(juego)), tinte, lineal):
-                archivo_color = nombre_color(juego)
+                    detalle, os.path.join(carpeta, archivo), tinte, lineal, forma):
+                archivo_color = archivo
                 informe["texturas"].append(archivo_color)
             else:
                 informe["sin_color"].append(juego)
             archivo_normal = texturas.archivo(juego, "normal")
         creados += _material("{}_{}_mat".format(PREFIJO, nombre), transform,
                              _a_pantalla(tinte, lineal), carpeta or "", archivo_color,
-                             archivo_normal)
+                             archivo_normal, alfa=forma is not None and archivo_color is not None)
     return grupo, creados, informe
 
 
@@ -532,8 +769,10 @@ def _exportar_abc(grupo, ruta):
     cmds.AbcExport(jobArg=trabajo)
 
 
-def exportar(ruta, planta=None, resolucion=None):
+def exportar(ruta, planta=None, resolucion=None, ligeras=False):
     """Exporta ``planta`` (o la seleccionada) a ``ruta`` (.fbx o .abc).
+
+    Con ``ligeras``, las hojas van como tarjetas con transparencia (juegos).
 
     Devuelve el informe de ``hornear`` con ``ruta`` y ``carpeta`` añadidos.
     La escena queda como estaba (sin la copia ni sus materiales).
@@ -563,7 +802,7 @@ def exportar(ruta, planta=None, resolucion=None):
         if os.path.isfile(ruta):
             os.remove(ruta)
         grupo, creados, informe = hornear(planta, carpeta, resolucion, _con_gestion_de_color(),
-                                          nombre_de_grupo(ruta))
+                                          nombre_de_grupo(ruta), ligeras)
         if not informe["hojas_vertices"] and not informe["tallos_vertices"]:
             raise Aviso(t("exportar_vacia"))
         if formato == "fbx":

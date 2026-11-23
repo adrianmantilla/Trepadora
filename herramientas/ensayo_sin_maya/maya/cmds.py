@@ -195,7 +195,8 @@ def warning(texto):
 
 def curve(degree=1, point=(), name="curve1", **_):
     t = _nuevo(name, "transform")
-    _nuevo(t + "Shape", "nurbsCurve", t, puntos=len(point))
+    _nuevo(t + "Shape", "nurbsCurve", t, puntos=len(point),
+           lista=[tuple(float(c) for c in p) for p in point])
     return t
 
 

@@ -175,6 +175,99 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = None,
     return malla
 
 
+# ------------------------------------------------------------------- raíces
+# Color de las raíces adhesivas: un pardo más claro que la madera del tallo.
+_RAIZ = (0.36, 0.28, 0.19)
+# Puntos del final de cada rama sin raíces: lo joven aún no se ha agarrado.
+_RAICES_SIN_PUNTA = 6
+# Probabilidad de un grupo de raíces en cada punto pegado, con «Raíces adhesivas» a 1
+# (a 0,5, la mitad): un grupo cada dos o tres puntos, como una franja a los lados.
+_RAICES_PROB = 0.7
+
+
+def anadir_raices(malla: Malla, crecimiento, radios: List[List[float]], cantidad: float,
+                  semilla: int = 1, tipo: str = "lenoso") -> int:
+    """Añade a ``malla`` (la de los tallos) raicillas que agarran el tallo a la pared.
+
+    Salen en grupos de dos a cuatro por los lados del tallo, allí donde va
+    pegado a una superficie (no en lo que cuelga ni en las puntas), y llegan
+    a la pared un poco más allá, algo hacia abajo. Cada una es un tubo fino
+    de tres lados y dos tramos, arqueado, con la textura de la corteza.
+    ``cantidad`` va de 0 (ninguna) a 1. Devuelve cuántas se añadieron.
+    """
+    if cantidad <= 0.0:
+        return 0
+    rng = random.Random(semilla * 53 + 11)
+    madera = TIPOS_TALLO.get(tipo, TIPOS_TALLO["lenoso"])["madera"]
+    paso = crecimiento.p.longitud_paso
+    hechas = 0
+    for rama, radios_rama in zip(crecimiento.ramas, radios):
+        if rama.colgante:
+            continue
+        puntos = rama.puntos
+        for k in range(1, len(puntos) - _RAICES_SIN_PUNTA):
+            if rng.random() >= cantidad * _RAICES_PROB:
+                continue
+            p, r = puntos[k], radios_rama[k]
+            cercano, normal = crecimiento.cercano(p)
+            if v.distancia(p, cercano) > r + 0.25 * paso:
+                continue        # aquí el tallo no toca la pared
+            adelante = v.unitario(v.tangente(v.resta(puntos[k + 1], puntos[k - 1]), normal))
+            if adelante is None:
+                continue
+            lado = v.cruz(normal, adelante)
+            abajo = v.tangente(v.ABAJO, normal)
+            color = _variar(_mezclar(madera, _RAIZ, 0.6), rng, 0.12)
+            for _ in range(rng.randint(2, 4)):
+                signo = 1.0 if rng.random() < 0.5 else -1.0
+                # Sale del costado del tallo, del lado que da a la pared...
+                salida = v.unitario(v.suma(v.escala(lado, signo), v.escala(normal, -0.4)))
+                inicio = v.suma(p, v.escala(salida, r * 0.85))
+                # ...y llega a la pared algo apartada del tallo y más abajo.
+                fin = v.suma(cercano, v.escala(lado, signo * r * rng.uniform(1.6, 3.4)))
+                fin = v.suma(fin, v.escala(adelante, r * rng.uniform(-1.0, 1.0)))
+                fin = v.suma(fin, v.escala(abajo, r * rng.uniform(0.0, 1.2)))
+                # Junto a una arista la pared se acaba: la raíz se agarra donde
+                # siga habiendo superficie, o no sale si queda lejos del tallo.
+                apoyo, normal_apoyo = crecimiento.cercano(fin)
+                if v.distancia(apoyo, cercano) > 4.0 * r:
+                    continue
+                fin = v.suma(apoyo, v.escala(normal_apoyo, 0.02 * r))
+                medio = v.escala(v.suma(inicio, fin), 0.5)
+                medio = v.suma(medio, v.escala(normal, v.distancia(inicio, fin) * 0.25))
+                _tubo_fino(malla, (inicio, medio, fin), r * rng.uniform(0.09, 0.14), color)
+                hechas += 1
+    return hechas
+
+
+def _tubo_fino(malla: Malla, camino, radio: float, color: Vector, lados: int = 3) -> None:
+    """Tubo de ``lados`` lados por los puntos de ``camino``, que adelgaza hacia el final."""
+    n = len(camino)
+    anillos, anillos_uv, recorrido = [], [], 0.0
+    referencia = None
+    for k, punto in enumerate(camino):
+        if k > 0:
+            recorrido += v.distancia(punto, camino[k - 1]) / (2.0 * math.pi * max(radio, v.EPS))
+        t = v.unitario(v.resta(camino[min(k + 1, n - 1)], camino[max(k - 1, 0)])) or v.ARRIBA
+        u = (v.unitario(v.tangente(referencia, t)) if referencia else None) or v.perpendicular(t)
+        referencia = u
+        w = v.cruz(t, u)
+        rk = radio * (1.0 - 0.45 * k / (n - 1))
+        anillo = []
+        for j in range(lados):
+            a = 2.0 * math.pi * j / lados
+            desplazado = v.suma(v.escala(u, math.cos(a) * rk), v.escala(w, math.sin(a) * rk))
+            anillo.append(malla.vertice(v.suma(punto, desplazado), color))
+        anillos.append(anillo)
+        anillos_uv.append([malla.uv(j / lados, recorrido) for j in range(lados + 1)])
+    for k in range(n - 1):
+        a, b = anillos[k], anillos[k + 1]
+        ua, ub = anillos_uv[k], anillos_uv[k + 1]
+        for j in range(lados):
+            j2 = (j + 1) % lados
+            malla.cara(a[j], a[j2], b[j2], b[j], uvs=(ua[j], ua[j + 1], ub[j + 1], ub[j]))
+
+
 # -------------------------------------------------------------------- hojas
 def _perfil_mezclado(a, b, t):
     """Perfil intermedio entre dos perfiles (t = 0 -> a, t = 1 -> b)."""

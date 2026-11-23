@@ -5,11 +5,13 @@ import os
 from maya import cmds, mel
 
 from . import __version__
-from .i18n import t, usar_idioma
+from .i18n import idioma, t, usar_idioma
 
 MENU = "trepadoraMenu"
 OPCION_IDIOMA = "trepadoraIdioma"
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Cada idioma se nombra en su propia lengua.
+NOMBRES_IDIOMA = {"es": "Español", "en": "English"}
 
 
 def idioma_guardado():
@@ -35,8 +37,40 @@ def crear():
     cmds.menuItem(divider=True)
     cmds.menuItem(label=t("menu_exportar"), annotation=t("ayuda_menu_exportar"),
                   command=lambda *_: exportar_seleccion())
+    cmds.menuItem(label=t("menu_exportar_ligeras"), annotation=t("ayuda_menu_exportar_ligeras"),
+                  command=lambda *_: exportar_seleccion(ligeras=True))
     cmds.menuItem(divider=True)
+    cmds.menuItem(label=t("menu_idioma"), subMenu=True)
+    cmds.radioMenuItemCollection()
+    for codigo in idiomas_del_menu():
+        cmds.menuItem(label=NOMBRES_IDIOMA.get(codigo, codigo), radioButton=codigo == idioma(),
+                      command=lambda *_, c=codigo: cambiar_idioma(c))
+    cmds.setParent("..", menu=True)
     cmds.menuItem(label=t("menu_acerca"), command=lambda *_: acerca_de())
+
+
+def idiomas_del_menu():
+    from .i18n import idiomas
+
+    return idiomas()
+
+
+def cambiar_idioma(codigo):
+    """Cambia el idioma de Trepadora, lo recuerda y rehace el menú y la ventana."""
+    cmds.optionVar(stringValue=(OPCION_IDIOMA, codigo))
+    usar_idioma(codigo)
+    from .ui import ventana
+
+    anterior = ventana._ventana
+    abierta = anterior is not None and ventana._valida(anterior)
+    sesion = anterior.sesion if abierta else None
+    if abierta:
+        ventana.cerrar()
+    # El menú no se puede borrar mientras se ejecuta una de sus órdenes.
+    cmds.evalDeferred(crear)
+    if abierta:
+        cmds.evalDeferred(lambda: ventana.mostrar(sesion=sesion))
+    print(t("idioma_cambiado"))
 
 
 def borrar():
@@ -73,8 +107,11 @@ def escena_de_prueba(nombre):
     return ventana
 
 
-def exportar_seleccion():
-    """Pide dónde guardar la planta seleccionada y la exporta (FBX o Alembic)."""
+def exportar_seleccion(ligeras=False):
+    """Pide dónde guardar la planta seleccionada y la exporta (FBX o Alembic).
+
+    Con ``ligeras``, las hojas van como tarjetas con transparencia (juegos).
+    """
     from . import exportar, texturas
     from .ajustes import Aviso
 
@@ -86,7 +123,8 @@ def exportar_seleccion():
     if not rutas:
         return None
     try:
-        informe = exportar.exportar(rutas[0], resolucion=texturas.resolucion_actual())
+        informe = exportar.exportar(rutas[0], resolucion=texturas.resolucion_actual(),
+                                    ligeras=ligeras)
     except Aviso as aviso:
         cmds.warning(str(aviso))
         return None
@@ -95,6 +133,11 @@ def exportar_seleccion():
         return None
     print(t("exportado", archivo=os.path.basename(informe["ruta"]), n=len(informe["texturas"]),
             carpeta=os.path.basename(informe["carpeta"])))
+    if ligeras:
+        if informe.get("ligeras"):
+            print(t("exportado_ligeras", n=informe["hojas_vertices"]))
+        else:
+            cmds.warning(t("exportado_sin_ligeras"))
     if informe["sin_color"]:
         cmds.warning(t("exportado_sin_color", juegos=", ".join(informe["sin_color"])))
     return informe
