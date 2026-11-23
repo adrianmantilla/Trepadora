@@ -20,7 +20,7 @@ from maya import cmds
 
 from . import ajustes as aj
 from .ajustes import Aviso  # noqa: F401 (la ventana lo importa de aquí o de ajustes)
-from . import deshacer, escenas, prototipo, texturas
+from . import deshacer, escenas, exportar, prototipo, texturas
 from dataclasses import fields
 
 from .crecimiento import Crecimiento, Parametros
@@ -491,7 +491,21 @@ class Sesion:
                      "limite": self._crecimiento.limite_alcanzado, "cancelado": False}
         return resultado
 
-    # ---------------------------------------------------------------- estado
+    # ------------------------------------------------------------ exportar
+    def planta_para_exportar(self):
+        """La planta seleccionada o, si no hay, la última creada (o None)."""
+        planta = exportar.planta_de()
+        if planta is None and self.ultima_planta and cmds.objExists(self.ultima_planta):
+            planta = self.ultima_planta
+        return planta
+
+    def exportar(self, ruta):
+        """Exporta la planta (ver ``planta_para_exportar``) a ``ruta``; devuelve el informe."""
+        planta = self.planta_para_exportar()
+        if planta is None:
+            raise Aviso(t("sin_planta_seleccionada"))
+        return exportar.exportar(ruta, planta, texturas.resolucion_actual())
+
     # ------------------------------------------------------------ texturas
     def resolucion_texturas(self):
         return texturas.resolucion_actual()

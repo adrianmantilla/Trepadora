@@ -623,6 +623,151 @@ def texturas(v):
     return datos
 
 
+def _redondear(valores, n=2):
+    return [round(x, n) for x in valores] if valores else valores
+
+
+def _hijos_de_tipo(padre, tipo):
+    return [h for h in cmds.listRelatives(padre, children=True, fullPath=True) or []
+            if cmds.nodeType(h) == tipo]
+
+
+def _reimportar(ruta, formato):
+    """Importa lo exportado, apunta sus mallas y materiales, y lo vuelve a borrar."""
+    antes = set(cmds.ls(long=True))
+    if formato == "fbx":
+        if not cmds.pluginInfo("fbxmaya", query=True, loaded=True):
+            cmds.loadPlugin("fbxmaya", quiet=True)
+        cmds.file(ruta, i=True, type="FBX", ignoreVersion=True, namespace="reimportado")
+    else:
+        if not cmds.pluginInfo("AbcImport", query=True, loaded=True):
+            cmds.loadPlugin("AbcImport", quiet=True)
+        cmds.AbcImport(ruta, mode="import")
+    nuevos = [n for n in cmds.ls(long=True) if n not in antes]
+    mallas = []
+    for forma in [n for n in nuevos if cmds.nodeType(n) == "mesh"]:
+        transform = cmds.listRelatives(forma, parent=True, fullPath=True)[0]
+        dato = {"nombre": transform, "vertices": cmds.polyEvaluate(forma, vertex=True),
+                "caras": cmds.polyEvaluate(forma, face=True),
+                "colores": cmds.polyColorSet(forma, query=True, allColorSets=True),
+                "uvs": cmds.polyUVSet(forma, query=True, allUVSets=True),
+                "caja": _redondear(cmds.exactWorldBoundingBox(transform)), "texturas": []}
+        for grupo in cmds.listConnections(forma, type="shadingEngine") or []:
+            for material in cmds.listConnections(grupo + ".surfaceShader") or []:
+                for nodo in cmds.listHistory(material) or []:
+                    if cmds.nodeType(nodo) == "file":
+                        archivo = cmds.getAttr(nodo + ".fileTextureName")
+                        dato["texturas"].append([archivo, os.path.isfile(archivo)])
+        mallas.append(dato)
+    borrar = [n for n in nuevos if cmds.objExists(n) and n.count("|") == 1
+              and cmds.nodeType(n) == "transform"]
+    if borrar:
+        cmds.delete(borrar)
+    if formato == "fbx" and cmds.namespace(exists="reimportado"):
+        cmds.namespace(removeNamespace="reimportado", deleteNamespaceContent=True)
+    return mallas
+
+
+def _comparar_horneado(planta):
+    """Cajas de las hojas horneadas y de las del instanciador, quieta y movida.
+
+    Para saber qué hacer si no coinciden, también las cajas de otras maneras de
+    componer las matrices (la del modelo sin sus padres, sin la del instanciador).
+    """
+    from trepadora import exportar as ex
+
+    instanciador = _hijos_de_tipo(planta, "instancer")[0]
+    original = ex._matriz
+    datos = {}
+    for caso, mover, girar in (("quieta", (0, 0, 0), (0, 0, 0)),
+                               ("movida", (40, 0, 25), (0, 30, 0))):
+        cmds.xform(planta, translation=mover, rotation=girar, worldSpace=True)
+        _procesar()
+        d = {"caja_instancias": _redondear(cmds.exactWorldBoundingBox(instanciador)),
+             "caja_tallos": _redondear(cmds.exactWorldBoundingBox(planta + "|trepadora_tallos"))}
+
+        def local(nodo):
+            if cmds.nodeType(nodo) == "instancer":
+                return original(nodo)
+            return tuple(cmds.xform(nodo, query=True, matrix=True, worldSpace=False))
+
+        variantes = {"modelo_local": local,
+                     "sin_instanciador": lambda n: (ex.IDENTIDAD if cmds.nodeType(n) == "instancer"
+                                                    else original(n))}
+        for nombre, funcion in variantes.items():
+            ex._matriz = funcion
+            try:
+                caja = ex.caja(ex.hojas_de(planta)[0])
+                d["caja_" + nombre] = _redondear(caja[0] + caja[1]) if caja else None
+            finally:
+                ex._matriz = original
+        grupo, creados, informe = ex.hornear(planta, nombre="horneada_" + caso)
+        hojas = grupo + "|hojas"
+        tallos = grupo + "|tallos"
+        d["caja_horneada"] = _redondear(cmds.exactWorldBoundingBox(hojas))
+        d["caja_tallos_horneados"] = _redondear(cmds.exactWorldBoundingBox(tallos))
+        d["diferencia_hojas"] = round(max(abs(a - b) for a, b in
+                                          zip(d["caja_horneada"], d["caja_instancias"])), 2)
+        d["diferencia_tallos"] = round(max(abs(a - b) for a, b in
+                                           zip(d["caja_tallos_horneados"], d["caja_tallos"])), 2)
+        d["informe"] = informe
+        if caso == "movida":
+            caja = d["caja_instancias"]
+            centro = [(caja[i] + caja[i + 3]) / 2.0 for i in range(3)]
+            _vista((centro[0] - 280, centro[1] + 200, centro[2] + 480), centro, 42)
+            cmds.setAttr(grupo + ".visibility", 0)
+            d["visor_instancias"] = _captura_visor("7_instancias_movida")
+            cmds.setAttr(grupo + ".visibility", 1)
+            cmds.setAttr(planta + ".visibility", 0)
+            d["visor_horneada"] = _captura_visor("7_horneada_movida")
+            cmds.setAttr(planta + ".visibility", 1)
+        cmds.delete([n for n in creados if cmds.objExists(n)])
+        datos[caso] = d
+    cmds.xform(planta, translation=(0, 0, 0), rotation=(0, 0, 0), worldSpace=True)
+    return datos
+
+
+def exportar(v):
+    """Exporta la planta de la ruina a FBX y a Alembic con el botón de la ventana.
+
+    Las rutas llevan espacios y una eñe, como las de un alumno. Vuelve a
+    importar cada archivo, compara las hojas horneadas con las del
+    instanciador (también con la planta movida y girada) y mira que la escena
+    quede como estaba.
+    """
+    from trepadora import exportar as ex
+
+    carpeta = os.path.join(_SALIDA, "exportar prueba ñ")
+    planta = v.sesion.planta_para_exportar()
+    datos = {"planta": planta, "resolucion": v.sesion.resolucion_texturas()}
+    nodos_antes = len(cmds.ls())
+    for formato in ("fbx", "abc"):
+        ruta = os.path.join(carpeta, "planta ruina." + formato)
+        v._pedir_ruta_exportar = lambda r=ruta: r
+        inicio = time.time()
+        v.boton_exportar.click()
+        _procesar()
+        d = {"segundos": round(time.time() - inicio, 2), "mensaje": v.mensaje.text(),
+             "existe": os.path.isfile(ruta)}
+        if d["existe"]:
+            d["mb"] = round(os.path.getsize(ruta) / 1e6, 2)
+            texturas_dir = ex.carpeta_texturas(ruta)
+            d["texturas"] = {n: os.path.getsize(os.path.join(texturas_dir, n))
+                             for n in sorted(os.listdir(texturas_dir))}
+            with open(os.path.join(texturas_dir, "trepadora_exportar.json"),
+                      encoding="utf-8") as f:
+                d["informe"] = json.load(f)
+            d["reimportado"] = _reimportar(ruta, formato)
+        datos[formato] = d
+        if formato == "fbx":
+            datos["captura"] = _captura_ventana(v, "7_exportar")
+    del v._pedir_ruta_exportar
+    datos["restos"] = cmds.ls(ex.PREFIJO + "*") + cmds.ls("planta_ruina*")
+    datos["nodos_antes_despues"] = [nodos_antes, len(cmds.ls())]
+    datos["comparar"] = _comparar_horneado(planta)
+    return datos
+
+
 def recargar_plugin():
     import instalar
     from trepadora import menu
@@ -710,6 +855,7 @@ def _pasos():
         ("hoja_propia", lambda: hoja_propia(_v())),
         ("ruina", lambda: ruina(_v())),
         ("texturas", lambda: texturas(_v())),
+        ("exportar", lambda: exportar(_v())),
         # Antes de recargar el plug-in: al descargarlo se cierra la ventana.
         ("ajustes_al_salir", _ajustes_al_salir),
         ("recargar_plugin", recargar_plugin),

@@ -235,6 +235,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         self.controles = {}
         self.preajustes = []
         self._trabajos = []
+        self._ultima_exportacion = None
         self._construir()
         self._cargar_preajustes()
         self._poner_controles(self.sesion.ajustes)
@@ -435,9 +436,14 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         self.boton_malla.setMinimumHeight(36)
         self.boton_malla.setToolTip(t("ayuda_crear_malla"))
         self.boton_malla.clicked.connect(self._crear_malla)
+        self.boton_exportar = QtWidgets.QPushButton(t("exportar"))
+        self.boton_exportar.setMinimumHeight(36)
+        self.boton_exportar.setToolTip(t("ayuda_exportar"))
+        self.boton_exportar.clicked.connect(self._exportar)
         self.estado_pie = QtWidgets.QLabel()
         self.estado_pie.setWordWrap(True)
         fila.addWidget(self.boton_malla, 1)
+        fila.addWidget(self.boton_exportar)
         fila.addWidget(self.estado_pie, 1)
         return fila
 
@@ -607,6 +613,34 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
             self._informe(resultado, "resultado_malla")
         elif resultado is not None:
             self.avisar(t("malla_cancelada"))
+
+    def _exportar(self):
+        if self.sesion.planta_para_exportar() is None:
+            self.avisar(t("sin_planta_seleccionada"))
+            return
+        ruta = self._pedir_ruta_exportar()
+        if not ruta:
+            return
+        self._ultima_exportacion = ruta
+        informe = self._hacer(self.sesion.exportar, ruta)
+        if informe is None:
+            return
+        self.avisar(t("exportado", archivo=os.path.basename(informe["ruta"]),
+                      n=len(informe["texturas"]),
+                      carpeta=os.path.basename(informe["carpeta"])), aviso=False)
+        if informe["sin_color"]:
+            self.avisar(t("exportado_sin_color", juegos=", ".join(informe["sin_color"])))
+
+    def _pedir_ruta_exportar(self):
+        """Ruta del archivo (con .fbx o .abc), o None si se cancela."""
+        ruta, filtro = QtWidgets.QFileDialog.getSaveFileName(
+            self, t("exportar_titulo"), self._ultima_exportacion or "trepadora_planta.fbx",
+            t("exportar_filtro"))
+        if not ruta:
+            return None
+        if not os.path.splitext(ruta)[1]:
+            ruta += ".abc" if "*.abc" in (filtro or "") else ".fbx"
+        return ruta
 
     # ------------------------------------------------------------ preajustes
     def carpeta_preajustes(self):

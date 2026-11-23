@@ -33,6 +33,9 @@ def crear():
     cmds.menuItem(label=t("menu_escena_ruina"), annotation=t("ayuda_menu_escena"),
                   command=lambda *_: escena_de_prueba("ruina"))
     cmds.menuItem(divider=True)
+    cmds.menuItem(label=t("menu_exportar"), annotation=t("ayuda_menu_exportar"),
+                  command=lambda *_: exportar_seleccion())
+    cmds.menuItem(divider=True)
     cmds.menuItem(label=t("menu_acerca"), command=lambda *_: acerca_de())
 
 
@@ -68,6 +71,30 @@ def escena_de_prueba(nombre):
     ventana = abrir()
     ventana.escena_de_prueba(nombre)
     return ventana
+
+
+def exportar_seleccion():
+    """Pide dónde guardar la planta seleccionada y la exporta (FBX o Alembic)."""
+    from . import exportar, texturas
+    from .ajustes import Aviso
+
+    if exportar.planta_de() is None:
+        cmds.warning(t("sin_planta_seleccionada"))
+        return None
+    rutas = cmds.fileDialog2(caption=t("exportar_titulo"), fileMode=0, dialogStyle=2,
+                             fileFilter=t("exportar_filtro"))
+    if not rutas:
+        return None
+    try:
+        informe = exportar.exportar(rutas[0], resolucion=texturas.resolucion_actual())
+    except Aviso as aviso:
+        cmds.warning(str(aviso))
+        return None
+    print(t("exportado", archivo=os.path.basename(informe["ruta"]), n=len(informe["texturas"]),
+            carpeta=os.path.basename(informe["carpeta"])))
+    if informe["sin_color"]:
+        cmds.warning(t("exportado_sin_color", juegos=", ".join(informe["sin_color"])))
+    return informe
 
 
 def acerca_de():
