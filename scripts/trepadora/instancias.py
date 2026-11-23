@@ -159,7 +159,8 @@ def hojas_instanciadas(hojas, forma: str = "hiedra", semilla: int = 1,
                 malla = geometria.Malla()
                 geometria._lamina(malla, geometria.perfil_hoja(forma, lob), al_azar,
                                   random.Random(int(sub * 1e9)), color,
-                                  lambda cx, cy, cz: (cx, cy, cz))
+                                  lambda cx, cy, cz: (cx, cy, cz),
+                                  geometria.ESCALA_UV.get(forma))
                 indice_modelo[(g, lob, n)] = len(resultado.modelos)
                 resultado.modelos.append(Modelo(malla, lob, g, color))
 

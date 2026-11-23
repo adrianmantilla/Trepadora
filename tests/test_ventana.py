@@ -42,6 +42,8 @@ class SesionFalsa:
         self._origenes = []
         self._crecido = False
         self.fallar_seleccion = False
+        self.resolucion = "1k"
+        self.hay_resoluciones = ("512", "1k", "2k", "4k")
 
     def superficies_validas(self):
         return self.superficies
@@ -106,6 +108,15 @@ class SesionFalsa:
     def ajustes_de_planta(self):
         return dict(aj.valores_por_defecto(), semilla=77), {}
 
+    def resolucion_texturas(self):
+        return self.resolucion
+
+    def cambiar_texturas(self, resolucion):
+        self.llamadas.append(("texturas", resolucion))
+        self.resolucion = resolucion
+        usada = resolucion if resolucion in self.hay_resoluciones else self.hay_resoluciones[-1]
+        return (7 if usada != "1k" else 0), usada
+
 
 @unittest.skipIf(QtWidgets is None or EN_MAYA, "sin PySide6, o dentro de Maya")
 class PruebasVentana(unittest.TestCase):
@@ -160,6 +171,18 @@ class PruebasVentana(unittest.TestCase):
         v.boton_crecer.click()
         self.assertTrue(v.boton_mas.isEnabled())
         self.assertIn("12.345", v.estado_pie.text())
+
+    def test_resolucion_de_texturas(self):
+        """El ajuste cambia las texturas de la escena y no entra en los preajustes."""
+        combo = self.v.combo_texturas
+        self.assertEqual(combo.valor(), "1k")
+        combo.setCurrentIndex(combo.findData("2k"))
+        self.assertEqual(self.sesion.llamadas[-1], ("texturas", "2k"))
+        self.assertIn("7", self.v.mensaje.text())
+        self.assertNotIn("texturas", self.sesion.ajustes)
+        self.sesion.hay_resoluciones = ("512", "1k")
+        combo.setCurrentIndex(combo.findData("4k"))
+        self.assertIn("1K", self.v.mensaje.text())
 
     def test_aviso_que_ensena(self):
         self.sesion.fallar_seleccion = True

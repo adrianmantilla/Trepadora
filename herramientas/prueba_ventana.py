@@ -577,12 +577,201 @@ def ruina(v):
     v.boton_malla.click()
     datos["malla_s"] = round(time.time() - inicio, 2)
     datos["malla"] = _resumen_sesion(v)
-    datos["materiales_tono"] = sorted(cmds.ls("trepadora_hojas_tono*_mat") or [])
+    datos["materiales_tono"] = sorted(cmds.ls("trepadora_hoja*_tono*_mat") or [])
+    # Con textura, el color del lambert viene de un nodo file (getAttr no sirve).
     datos["colores_tono"] = [[round(c, 3) for c in cmds.getAttr(m + ".color")[0]]
                              for m in datos["materiales_tono"]]
+    datos["tono_con_textura"] = [bool(cmds.listConnections(m + ".color", source=True,
+                                                           destination=False))
+                                 for m in datos["materiales_tono"]]
     _vista((-260, 220, 520), (20, 110, 40), 42)
     datos["visor"] = _captura_visor("5_ruina")
     datos["captura"] = _captura_ventana(v, "5_ruina")
+    return datos
+
+
+def texturas(v):
+    """Cambia «Resolución de texturas» a 2K como un estudiante y mira la planta.
+
+    Deja una captura de cerca con las texturas en el visor (como la tecla 6) y
+    vuelve a 1K al terminar.
+    """
+    from trepadora import texturas as tx
+
+    def rutas():
+        return {n: cmds.getAttr(n + "." + a) for n, a, _j, _m in tx.nodos_de_textura()}
+
+    antes = rutas()
+    datos = {"carpeta": tx.carpeta(), "disponibles": tx.disponibles(),
+             "antes": tx.resolucion_actual(), "nodos": len(antes),
+             "faltan": sorted(r for r in antes.values() if not os.path.isfile(r)),
+             "juegos": sorted({cmds.getAttr(n + "." + tx.ATRIBUTO) for n in antes})}
+    combo = v.combo_texturas
+    combo.setCurrentIndex(combo.findData("2k"))
+    _procesar()
+    despues = rutas()
+    datos["despues"] = tx.resolucion_actual()
+    datos["en_2k"] = sum(1 for r in despues.values() if os.sep + "2k" + os.sep in r)
+    panel = _vista((-29, 124, 117), (-20, 110, 0), 40)
+    cmds.modelEditor(panel, edit=True, displayTextures=True)
+    datos["visor"] = _captura_visor("6_texturas_2k")
+    datos["captura"] = _captura_ventana(v, "6_texturas")
+    cmds.modelEditor(panel, edit=True, displayTextures=False)
+    combo.setCurrentIndex(combo.findData("1k"))
+    _procesar()
+    datos["al_final"] = tx.resolucion_actual()
+    return datos
+
+
+def _redondear(valores, n=2):
+    return [round(x, n) for x in valores] if valores else valores
+
+
+def _reimportar(ruta, formato):
+    """Importa lo exportado, apunta sus mallas y materiales, y lo vuelve a borrar."""
+    antes = set(cmds.ls(long=True))
+    if formato == "fbx":
+        if not cmds.pluginInfo("fbxmaya", query=True, loaded=True):
+            cmds.loadPlugin("fbxmaya", quiet=True)
+        cmds.file(ruta, i=True, type="FBX", ignoreVersion=True, namespace="reimportado")
+    else:
+        if not cmds.pluginInfo("AbcImport", query=True, loaded=True):
+            cmds.loadPlugin("AbcImport", quiet=True)
+        cmds.AbcImport(ruta, mode="import")
+    nuevos = [n for n in cmds.ls(long=True) if n not in antes]
+    mallas = []
+    for forma in [n for n in nuevos if cmds.nodeType(n) == "mesh"]:
+        transform = cmds.listRelatives(forma, parent=True, fullPath=True)[0]
+        dato = {"nombre": transform, "vertices": cmds.polyEvaluate(forma, vertex=True),
+                "caras": cmds.polyEvaluate(forma, face=True),
+                "colores": cmds.polyColorSet(forma, query=True, allColorSets=True),
+                "uvs": cmds.polyUVSet(forma, query=True, allUVSets=True),
+                "caja": _redondear(cmds.exactWorldBoundingBox(transform)), "texturas": []}
+        for grupo in cmds.listConnections(forma, type="shadingEngine") or []:
+            for material in cmds.listConnections(grupo + ".surfaceShader") or []:
+                for nodo in cmds.listHistory(material) or []:
+                    if cmds.nodeType(nodo) == "file":
+                        archivo = cmds.getAttr(nodo + ".fileTextureName")
+                        dato["texturas"].append([archivo, os.path.isfile(archivo)])
+        mallas.append(dato)
+    if formato == "fbx" and cmds.namespace(exists="reimportado"):
+        cmds.namespace(removeNamespace="reimportado", deleteNamespaceContent=True)
+    # Lo que el importador de FBX deja fuera del espacio de nombres (materiales).
+    for nodo in nuevos:
+        try:
+            if cmds.objExists(nodo) and not cmds.lockNode(nodo, query=True)[0]:
+                cmds.delete(nodo)
+        except (RuntimeError, ValueError):
+            pass
+    return mallas
+
+
+def _comparar_horneado(planta):
+    """Mueve y gira la planta y mira que lo horneado se mueva con ella, entero.
+
+    Las hojas y los tallos horneados con la planta movida deben ser los de la
+    planta quieta movidos con la matriz de la planta. Para saber qué falla si
+    no, también las cajas con la matriz del modelo en el mundo (con sus padres).
+    Deja capturas del instanciador y de lo horneado con la planta movida.
+    """
+    from trepadora import exportar as ex
+
+    original = ex._matriz
+    datos = {}
+    quietas = {}
+    for caso, mover, girar in (("quieta", (0, 0, 0), (0, 0, 0)),
+                               ("movida", (40, 0, 25), (0, 30, 0))):
+        cmds.xform(planta, translation=mover, rotation=girar, worldSpace=True)
+        _procesar()
+        hojas, _ = ex.hojas_de(planta)
+        tallos = ex.tallos_de(planta)
+        d = {"caja_hojas": _redondear(sum(ex.caja(hojas), ())),
+             "caja_tallos": _redondear(sum(ex.caja(tallos), ()))}
+        ex._matriz = lambda nodo, mundo=True: original(nodo, True)
+        try:
+            caja = ex.caja(ex.hojas_de(planta)[0])
+            d["caja_hojas_modelo_en_mundo"] = _redondear(sum(caja, ())) if caja else None
+        finally:
+            ex._matriz = original
+        if caso == "quieta":
+            quietas = {"hojas": hojas, "tallos": tallos}
+        else:
+            m = original(planta)
+            for nombre, malla in (("hojas", hojas), ("tallos", tallos)):
+                antes = quietas[nombre].vertices
+                d["error_" + nombre] = round(max(
+                    (max(abs(a - b) for a, b in zip(ex.transformar(p, m), q))
+                     for p, q in zip(antes, malla.vertices)), default=0.0), 4)
+                d["vertices_" + nombre] = [len(antes), len(malla.vertices)]
+            grupo, creados, informe = ex.hornear(planta, nombre="horneada")
+            caja = d["caja_tallos"]
+            centro = [(caja[i] + caja[i + 3]) / 2.0 for i in range(3)]
+            _vista((centro[0] - 280, centro[1] + 200, centro[2] + 480), centro, 42)
+            cmds.setAttr(grupo + ".visibility", 0)
+            d["visor_instancias"] = _captura_visor("7_instancias_movida")
+            cmds.setAttr(grupo + ".visibility", 1)
+            cmds.setAttr(planta + ".visibility", 0)
+            d["visor_horneada"] = _captura_visor("7_horneada_movida")
+            cmds.setAttr(planta + ".visibility", 1)
+            cmds.delete([n for n in creados if cmds.objExists(n)])
+        datos[caso] = d
+    cmds.xform(planta, translation=(0, 0, 0), rotation=(0, 0, 0), worldSpace=True)
+    return datos
+
+
+def exportar(v):
+    """Exporta la planta de la ruina a FBX y a Alembic con el botón de la ventana.
+
+    Las rutas llevan espacios y una eñe, como las de un alumno. Vuelve a
+    importar cada archivo, compara las hojas horneadas con las del
+    instanciador (también con la planta movida y girada) y mira que la escena
+    quede como estaba.
+    """
+    from trepadora import exportar as ex
+
+    carpeta = os.path.join(_SALIDA, "exportar prueba ñ")
+    # Como un estudiante: sin nada seleccionado, la única planta de la escena.
+    # (Tras «Escena nueva», Maya avisa a la ventana cuando ya ha acabado el
+    # paso anterior y la sesión no recuerda la última planta creada.)
+    cmds.select(clear=True)
+    planta = v.sesion.planta_para_exportar()
+    datos = {"planta": planta, "plantas": ex.plantas_en_escena(),
+             "instanciador": ex.instanciador_de(planta) if planta else None,
+             "resolucion": v.sesion.resolucion_texturas()}
+    nodos_antes = len(cmds.ls())
+    for formato in ("fbx", "abc"):
+        ruta = os.path.join(carpeta, "planta ruina." + formato)
+        v._pedir_ruta_exportar = lambda r=ruta: r
+        inicio = time.time()
+        v.boton_exportar.click()
+        _procesar()
+        d = {"segundos": round(time.time() - inicio, 2), "mensaje": v.mensaje.text(),
+             "existe": os.path.isfile(ruta)}
+        datos[formato] = d
+        try:
+            if d["existe"]:
+                d["mb"] = round(os.path.getsize(ruta) / 1e6, 2)
+                texturas_dir = ex.carpeta_texturas(ruta)
+                d["texturas"] = {n: os.path.getsize(os.path.join(texturas_dir, n))
+                                 for n in sorted(os.listdir(texturas_dir))}
+                with open(os.path.join(texturas_dir, "trepadora_exportar.json"),
+                          encoding="utf-8") as f:
+                    d["informe"] = json.load(f)
+                inicio = time.time()
+                d["reimportado"] = _reimportar(ruta, formato)
+                d["reimportar_s"] = round(time.time() - inicio, 2)
+        except Exception:
+            d["error"] = traceback.format_exc()
+        if formato == "fbx":
+            datos["captura"] = _captura_ventana(v, "7_exportar")
+    del v._pedir_ruta_exportar
+    datos["restos"] = cmds.ls(ex.PREFIJO + "*") + cmds.ls("planta_ruina*")
+    datos["nodos_antes_despues"] = [nodos_antes, len(cmds.ls())]
+    try:
+        datos["comparar"] = _comparar_horneado(planta)
+    except Exception:
+        datos["comparar_error"] = traceback.format_exc()
+        cmds.xform(planta, translation=(0, 0, 0), rotation=(0, 0, 0), worldSpace=True)
     return datos
 
 
@@ -672,6 +861,8 @@ def _pasos():
         ("guardar_preajuste", lambda: guardar_preajuste(_v())),
         ("hoja_propia", lambda: hoja_propia(_v())),
         ("ruina", lambda: ruina(_v())),
+        ("texturas", lambda: texturas(_v())),
+        ("exportar", lambda: exportar(_v())),
         # Antes de recargar el plug-in: al descargarlo se cierra la ventana.
         ("ajustes_al_salir", _ajustes_al_salir),
         ("recargar_plugin", recargar_plugin),

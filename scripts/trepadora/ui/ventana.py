@@ -32,6 +32,7 @@ except ImportError:  # fuera de Maya, para las pruebas
             QtWidgets.QWidget.show(self)
 
 from .. import ajustes as aj
+from .. import texturas
 from ..ajustes import Aviso
 from ..i18n import t
 
@@ -234,6 +235,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         self.controles = {}
         self.preajustes = []
         self._trabajos = []
+        self._ultima_exportacion = None
         self._construir()
         self._cargar_preajustes()
         self._poner_controles(self.sesion.ajustes)
@@ -350,7 +352,32 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         formulario = self._formulario(caja)
         for control in aj.controles_del_grupo("aspecto"):
             self._fila(formulario, control)
+        # No es un ajuste de la planta (no va en los preajustes): vale para toda
+        # la escena y cambia también las plantas que ya están creadas.
+        control = aj.Control("texturas", "planta", "opcion", "aspecto", texturas.POR_DEFECTO,
+                             opciones=texturas.RESOLUCIONES)
+        self.combo_texturas = Opciones(control)
+        self.combo_texturas.poner(self.sesion.resolucion_texturas())
+        self.combo_texturas.cambiado.connect(self._cambiar_texturas)
+        etiqueta = QtWidgets.QLabel(t("ajuste_texturas"))
+        for widget in (etiqueta, self.combo_texturas):
+            widget.setToolTip(t("ayuda_texturas"))
+        formulario.addRow(etiqueta, self.combo_texturas)
         return caja
+
+    def _cambiar_texturas(self, resolucion):
+        resultado = self._hacer(self.sesion.cambiar_texturas, resolucion)
+        if resultado is None:
+            return
+        cambiadas, usada = resultado
+        nombre = t("opcion_texturas_" + resolucion).split(" ")[0]
+        if usada != resolucion:
+            self.avisar(t("texturas_faltan", resolucion=nombre,
+                          usada=t("opcion_texturas_" + usada).split(" ")[0]))
+        elif cambiadas:
+            self.avisar(t("texturas_cambiadas", resolucion=nombre, n=cambiadas), aviso=False)
+        else:
+            self.avisar(t("texturas_sin_cambios", resolucion=nombre), aviso=False)
 
     def _botones_crecer(self):
         fila = QtWidgets.QHBoxLayout()
@@ -409,9 +436,14 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         self.boton_malla.setMinimumHeight(36)
         self.boton_malla.setToolTip(t("ayuda_crear_malla"))
         self.boton_malla.clicked.connect(self._crear_malla)
+        self.boton_exportar = QtWidgets.QPushButton(t("exportar"))
+        self.boton_exportar.setMinimumHeight(36)
+        self.boton_exportar.setToolTip(t("ayuda_exportar"))
+        self.boton_exportar.clicked.connect(self._exportar)
         self.estado_pie = QtWidgets.QLabel()
         self.estado_pie.setWordWrap(True)
         fila.addWidget(self.boton_malla, 1)
+        fila.addWidget(self.boton_exportar)
         fila.addWidget(self.estado_pie, 1)
         return fila
 
@@ -581,6 +613,40 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
             self._informe(resultado, "resultado_malla")
         elif resultado is not None:
             self.avisar(t("malla_cancelada"))
+
+    def _exportar(self):
+        if self.sesion.planta_para_exportar() is None:
+            self.avisar(t("sin_planta_seleccionada"))
+            return
+        ruta = self._pedir_ruta_exportar()
+        if not ruta:
+            return
+        self._ultima_exportacion = ruta
+        try:
+            informe = self._hacer(self.sesion.exportar, ruta)
+        except (RuntimeError, OSError) as error:
+            # Lo que diga Maya o el sistema (sin permiso para escribir, sin
+            # el plug-in de FBX...) se enseña como aviso, no como un error de Python.
+            self.avisar(t("exportar_error", error=str(error).strip()))
+            return
+        if informe is None:
+            return
+        self.avisar(t("exportado", archivo=os.path.basename(informe["ruta"]),
+                      n=len(informe["texturas"]),
+                      carpeta=os.path.basename(informe["carpeta"])), aviso=False)
+        if informe["sin_color"]:
+            self.avisar(t("exportado_sin_color", juegos=", ".join(informe["sin_color"])))
+
+    def _pedir_ruta_exportar(self):
+        """Ruta del archivo (con .fbx o .abc), o None si se cancela."""
+        ruta, filtro = QtWidgets.QFileDialog.getSaveFileName(
+            self, t("exportar_titulo"), self._ultima_exportacion or "trepadora_planta.fbx",
+            t("exportar_filtro"))
+        if not ruta:
+            return None
+        if not os.path.splitext(ruta)[1]:
+            ruta += ".abc" if "*.abc" in (filtro or "") else ".fbx"
+        return ruta
 
     # ------------------------------------------------------------ preajustes
     def carpeta_preajustes(self):

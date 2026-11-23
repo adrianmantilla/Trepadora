@@ -7,6 +7,13 @@ u otro programa puedan crear la malla:
 * ``conteos``: número de vértices de cada cara
 * ``indices``: índices de vértices de todas las caras, seguidos
 * ``colores``: un color (r, g, b) por vértice
+* ``uvs``: coordenadas de textura (u, v)
+* ``uv_indices``: un índice de ``uvs`` por cada índice de ``indices``
+
+Las UVs de las hojas van en coordenadas de la propia hoja (el nervio central
+en u = 0,5), así que todas las hojas de una forma comparten textura. Las de
+los tallos dan una vuelta de textura alrededor del tubo y avanzan a lo largo
+de la rama, para una corteza que se repite.
 """
 
 import math
@@ -62,20 +69,37 @@ TIPOS_TALLO = {
 
 
 class Malla:
+    """Vértices, caras, colores y UVs.
+
+    Hay dos maneras de dar las UVs: una por vértice (``vertice(p, color, uv)``
+    y ``cara(*ids)``), o aparte con ``uv()`` y ``cara(*ids, uvs=...)`` cuando
+    un vértice necesita más de una (la costura de un tubo). No se mezclan en
+    la misma malla.
+    """
+
     def __init__(self):
         self.vertices: List[Vector] = []
         self.conteos: List[int] = []
         self.indices: List[int] = []
         self.colores: List[Vector] = []
+        self.uvs: List[Tuple[float, float]] = []
+        self.uv_indices: List[int] = []
 
-    def vertice(self, p: Vector, color: Vector) -> int:
+    def vertice(self, p: Vector, color: Vector, uv: Tuple[float, float] = None) -> int:
         self.vertices.append(p)
         self.colores.append(color)
+        if uv is not None:
+            self.uvs.append(uv)
         return len(self.vertices) - 1
 
-    def cara(self, *ids: int) -> None:
+    def uv(self, u: float, v: float) -> int:
+        self.uvs.append((u, v))
+        return len(self.uvs) - 1
+
+    def cara(self, *ids: int, uvs: List[int] = None) -> None:
         self.conteos.append(len(ids))
         self.indices.extend(ids)
+        self.uv_indices.extend(ids if uvs is None else uvs)
 
 
 # ------------------------------------------------------------------- tallos
@@ -99,8 +123,16 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = None,
         joven = datos["joven"]
         surcos = _surcos(rng_corteza, lados, datos["corteza"])
         normal_ref = rama.normales[0]
-        anillos = []
+        anillos, anillos_uv = [], []
+        # La textura da una vuelta al tubo (u) y avanza con la rama (v) al
+        # mismo ritmo que la vuelta, para que no se estire. En las puntas, muy
+        # finas, no avanza más deprisa que en un tallo de un tercio del grueso.
+        r_min = 0.3 * max(radios_rama[:n])
+        recorrido = 0.0
         for k in range(n):
+            if k > 0:
+                r_medio = max(r_min, 0.5 * (radios_rama[k - 1] + radios_rama[k]), v.EPS)
+                recorrido += v.largo(v.resta(puntos[k], puntos[k - 1])) / (2.0 * math.pi * r_medio)
             if k == 0:
                 t = v.resta(puntos[1], puntos[0])
             elif k == n - 1:
@@ -118,6 +150,7 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = None,
             color = _mezclar(joven, base_color, mezcla)
             if k == n - 1:
                 anillos.append([malla.vertice(puntos[k], color)])
+                anillos_uv.append([malla.uv((j + 0.5) / lados, recorrido) for j in range(lados)])
                 continue
             anillo = []
             # La corteza se arruga más en la madera vieja que en las puntas.
@@ -128,14 +161,17 @@ def malla_tallos(crecimiento, radios: List[List[float]], lados: int = None,
                 desplazado = v.suma(v.escala(u, math.cos(a) * rj), v.escala(w, math.sin(a) * rj))
                 anillo.append(malla.vertice(v.suma(puntos[k], desplazado), color))
             anillos.append(anillo)
+            # Un lado más en las UVs: la costura repite el primer vértice en u = 1.
+            anillos_uv.append([malla.uv(j / lados, recorrido) for j in range(lados + 1)])
         for k in range(n - 1):
             a, b = anillos[k], anillos[k + 1]
+            ua, ub = anillos_uv[k], anillos_uv[k + 1]
             for j in range(lados):
                 j2 = (j + 1) % lados
                 if len(b) == 1:
-                    malla.cara(a[j], a[j2], b[0])
+                    malla.cara(a[j], a[j2], b[0], uvs=(ua[j], ua[j + 1], ub[j]))
                 else:
-                    malla.cara(a[j], a[j2], b[j2], b[j])
+                    malla.cara(a[j], a[j2], b[j2], b[j], uvs=(ua[j], ua[j + 1], ub[j + 1], ub[j]))
     return malla
 
 
@@ -199,19 +235,41 @@ _NERVIO = ((0.55, 0.65, 0.35), 0.18)
 _BORDE = ((0.0, 0.0, 0.0), 0.15)
 
 
-def _lamina(malla, perfil, forma, rng, color, colocar):
+def _ancho_maximo(forma: str) -> float:
+    perfiles = [PERFILES_HOJA.get(forma, PERFIL_HOJA)]
+    if forma == "hiedra":
+        perfiles.append(PERFILES_HOJA["corazon"])   # la hiedra se mezcla con él
+    return max(w for perfil in perfiles for _, w in perfil)
+
+
+# Cuánto mide de lado el cuadrado de textura de cada forma de hoja, con la
+# hoja de largo 1: cabe la hoja más ancha (con su azar y su asimetría) y un
+# margen. Igual en u y en v, para que la textura no se estire.
+ESCALA_UV = {f: max(1.1, 2.0 * _ancho_maximo(f) * 1.17 + 0.04) for f in PERFILES_HOJA}
+
+
+def uv_hoja(cx: float, y: float, escala: float) -> Tuple[float, float]:
+    """UV de un punto de la hoja (cx a lo ancho, y a lo largo de 0 a 1)."""
+    return 0.5 + cx / escala, 0.5 + (y - 0.5) / escala
+
+
+def _lamina(malla, perfil, forma, rng, color, colocar, escala_uv=None):
     """Añade a ``malla`` la lámina de una hoja.
 
     ``forma`` es (curva, pliegue, asimetría, torsión). ``colocar(cx, cy, cz)``
     pasa un punto de la hoja (cx a lo ancho, cy a lo largo de 0 a 1, cz hacia
-    su cara) a la escena.
+    su cara) a la escena. ``escala_uv`` es la de ESCALA_UV para la forma de la
+    hoja; las UVs son las de la hoja plana, antes de curvarla y torcerla.
     """
     curva, pliegue, asimetria, torsion = forma
+    if escala_uv is None:
+        escala_uv = max(1.1, 2.0 * max(w for _, w in perfil) * 1.17 + 0.04)
     filas = []
     for y, ancho in perfil:
         caida = -curva * y * y
         if ancho == 0.0:
-            filas.append([malla.vertice(colocar(0.0 + torsion * y * y, y, caida), color)])
+            filas.append([malla.vertice(colocar(0.0 + torsion * y * y, y, caida), color,
+                                        uv_hoja(0.0, y, escala_uv))])
         else:
             ancho *= 1.0 + rng.uniform(-0.06, 0.06)
             izq, der = ancho * (1.0 + asimetria), ancho * (1.0 - asimetria)
@@ -225,7 +283,8 @@ def _lamina(malla, perfil, forma, rng, color, colocar):
                 cx = r * w
                 cz = caida - pliegue * w * (0.35 * abs(r) + 0.65 * r * r)
                 c = claro if r == 0.0 else (oscuro if abs(r) == 1.0 else color)
-                fila.append(malla.vertice(colocar(cx + torsion * y * y, y, cz), c))
+                fila.append(malla.vertice(colocar(cx + torsion * y * y, y, cz), c,
+                                          uv_hoja(cx, y, escala_uv)))
             filas.append(fila)
     for a, b in zip(filas, filas[1:]):
         if len(a) == 1 and len(b) > 1:
@@ -269,7 +328,7 @@ def malla_hojas(hojas, curvatura: float = 0.22, plegado: float = 0.38,
             return v.suma(base, v.suma(v.escala(x, cx * s),
                                        v.suma(v.escala(f, cy * s), v.escala(z, cz * s))))
 
-        _lamina(malla, perfil, al_azar, rng, color, colocar)
+        _lamina(malla, perfil, al_azar, rng, color, colocar, ESCALA_UV.get(forma))
     return malla
 
 
@@ -302,12 +361,13 @@ def malla_peciolos(hojas, grosor: float = 0.022, tipo: str = "lenoso") -> Malla:
         fino = v.escala(ancho, 0.6)
         # Punto medio levantado: el rabillo forma un arco, no una línea recta.
         medio = v.suma(v.suma(hoja.tallo, v.escala(eje, 0.5)), v.escala(hoja.normal, largo * 0.18))
-        a = malla.vertice(v.resta(hoja.tallo, ancho), color)
-        b = malla.vertice(v.suma(hoja.tallo, ancho), color)
-        c = malla.vertice(v.suma(medio, fino), color)
-        d = malla.vertice(v.resta(medio, fino), color)
-        e = malla.vertice(v.suma(hoja.base, fino), color)
-        g = malla.vertice(v.resta(hoja.base, fino), color)
+        # UVs: una tira de la textura de los tallos, de ancho a ancho y del tallo a la hoja.
+        a = malla.vertice(v.resta(hoja.tallo, ancho), color, (0.0, 0.0))
+        b = malla.vertice(v.suma(hoja.tallo, ancho), color, (1.0, 0.0))
+        c = malla.vertice(v.suma(medio, fino), color, (1.0, 0.5))
+        d = malla.vertice(v.resta(medio, fino), color, (0.0, 0.5))
+        e = malla.vertice(v.suma(hoja.base, fino), color, (1.0, 1.0))
+        g = malla.vertice(v.resta(hoja.base, fino), color, (0.0, 1.0))
         malla.cara(a, b, c, d)
         malla.cara(d, c, e, g)
     return malla

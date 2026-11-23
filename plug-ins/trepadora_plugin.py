@@ -5,7 +5,9 @@ cada vez que se abre Maya. También se puede cargar a mano desde
 Windows > Settings/Preferences > Plug-in Manager.
 
 Registra además el comando ``trepadoraDeshacer``, que hace que Ctrl+Z quite
-de una vez la planta creada con «Crear malla» (ver ``trepadora/deshacer.py``).
+de una vez la planta creada con «Crear malla» (ver ``trepadora/deshacer.py``),
+y, al abrir o importar una escena, apunta a la carpeta de este ordenador las
+texturas de Trepadora que no encuentra (ver ``trepadora/texturas.py``).
 """
 
 import os
@@ -16,6 +18,7 @@ import maya.api.OpenMaya as om
 from maya import cmds
 
 COMANDO_DESHACER = "trepadoraDeshacer"
+_avisos_escena = []
 
 
 def maya_useNewAPI():
@@ -75,12 +78,27 @@ def _anadir_scripts(objeto):
         sys.path.insert(0, scripts)
 
 
+def _al_abrir_escena(*_):
+    """Una escena hecha en otro ordenador trae las rutas de las texturas de allí."""
+    try:
+        from trepadora import texturas
+        from trepadora.i18n import t
+
+        cambiadas = texturas.reparar_rutas()
+        if cambiadas:
+            om.MGlobal.displayInfo(t("texturas_reparadas", n=cambiadas))
+    except Exception:
+        om.MGlobal.displayWarning("Trepadora: " + traceback.format_exc().strip().splitlines()[-1])
+
+
 def initializePlugin(objeto):
     _anadir_scripts(objeto)
     from trepadora import __version__
 
     plugin = om.MFnPlugin(objeto, "Trepadora", __version__)
     plugin.registerCommand(COMANDO_DESHACER, _PasoDeshacer.crear)
+    for mensaje in (om.MSceneMessage.kAfterOpen, om.MSceneMessage.kAfterImport):
+        _avisos_escena.append(om.MSceneMessage.addCallback(mensaje, _al_abrir_escena))
     if not cmds.about(batch=True):
         from trepadora import menu
 
@@ -90,6 +108,8 @@ def initializePlugin(objeto):
 
 def uninitializePlugin(objeto):
     plugin = om.MFnPlugin(objeto)
+    while _avisos_escena:
+        om.MMessage.removeCallback(_avisos_escena.pop())
     if not cmds.about(batch=True):
         from trepadora import menu
 

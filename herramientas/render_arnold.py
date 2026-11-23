@@ -10,8 +10,8 @@ Uso desde la terminal, con mayapy (no hace falta abrir Maya)::
     TREPADORA_RAIZ=/ruta/Trepadora mayapy /ruta/Trepadora/herramientas/render_arnold.py \\
         /ruta/de/salida prefijo [vista ...]
 
-Vistas: general, ventana, columna y contraluz; sin vistas, renderiza
-«general». Si Arnold no tiene licencia, la imagen sale
+Vistas: general, ventana, columna, contraluz y cerca (las hojas junto a la
+ventana, para ver las texturas); sin vistas, renderiza «general». Si Arnold no tiene licencia, la imagen sale
 con marca de agua, que para comparar versiones no molesta.
 
 Para cambiar opciones de la planta, la variable TREPADORA_AJUSTES con un JSON,
@@ -68,6 +68,8 @@ SOL = dict(color=(1.0, 0.86, 0.68), intensidad=2.8, giro=(-50, -35, 0), angulo=2
 # paso de exposición, como haría un fotógrafo midiendo en la hiedra.
 CONTRALUZ = dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40, sol=(-28, 160, 0),
                  intensidad_sol=4.0, exposicion=0.5)
+# De cerca, las hojas y los tallos junto a la ventana: para ver las texturas.
+CERCA = dict(ojo=(-29, 124, 117), mira=(-20, 110, 0), fov=40)
 PIEDRA = (0.55, 0.52, 0.47)
 # Manchas de la piedra: ruido en el espacio de la escena (rasgos de unas 15
 # unidades), entre un tono más oscuro y otro más claro que PIEDRA. El relieve,
@@ -316,7 +318,7 @@ def renderizar(carpeta, prefijo, vistas=("general",), semilla=1):
     segundos, sol = preparar(cmds, semilla, **ajustes)
     forma_sol = cmds.listRelatives(sol, shapes=True)[0]
     informe.append("crecimiento y mallas: {:.2f} s".format(segundos))
-    todas = dict(capturas_maya.VISTAS_RUINA, contraluz=CONTRALUZ)
+    todas = dict(capturas_maya.VISTAS_RUINA, contraluz=CONTRALUZ, cerca=CERCA)
     for nombre in vistas:
         vista = todas[nombre]
         cmds.setAttr(sol + ".rotate", *vista.get("sol", SOL["giro"]), type="double3")

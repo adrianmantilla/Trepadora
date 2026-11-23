@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# Arnold crea .tx junto a las texturas al renderizar (auto-tx); son caché
+*.tx
