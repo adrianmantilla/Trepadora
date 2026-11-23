@@ -173,8 +173,9 @@ transparencia:
 - **Unreal:** pon el **Blend Mode** del material de las hojas en **Masked**.
 
 Las hojas propias no se pueden aligerar (su silueta no está en la textura): se exportan
-completas y la ventana lo avisa. Para aligerar aún más, baja la **Densidad de hojas** antes
-de crear la malla.
+completas y la ventana lo avisa. Para aligerar aún más, antes de crear la malla baja la
+**Densidad de hojas** y pon **Raíces adhesivas** a 0: las raicillas solo se ven de cerca y en
+la ruina suman unos 100.000 vértices a los tallos.
 
 **Idioma.** La interfaz está en español y en inglés. Se cambia en **Trepadora → Idioma /
 Language**, sin reiniciar Maya: si la ventana está abierta, se vuelve a abrir en el idioma
