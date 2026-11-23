@@ -725,6 +725,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def cambiar_sesion(self, sesion):
         self.sesion = sesion
         self._poner_controles(sesion.ajustes)
+        self.combo_preajustes.setCurrentIndex(-1)
         self.mensaje.setText("")
         self._actualizar()
 
@@ -750,6 +751,8 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def escena_de_prueba(self, nombre):
         self._hacer(self.sesion.preparar_escena_de_prueba, nombre)
         self._poner_controles(self.sesion.ajustes)
+        # La escena trae sus propios ajustes: ya no corresponden al preajuste elegido.
+        self.combo_preajustes.setCurrentIndex(-1)
         self._actualizar()
         self.avisar(t("escena_prueba_lista"), aviso=False)
 
