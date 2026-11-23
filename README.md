@@ -2,9 +2,10 @@
 
 Plugin para generar plantas trepadoras en Autodesk Maya 2026 y 2027, pensado para estudiantes.
 
-> **Estado: fase 1 (ventana para el aula).** Ventana acoplable con los pasos en orden,
-> preajustes e instalador de un solo gesto. Genera tallos con grosor, rabillos y hojas
-> (instancias de unas pocas hojas modelo, o una sola malla) con materiales de Arnold.
+> **Estado: fase 2 (texturas).** Ventana acoplable con los pasos en orden, preajustes e
+> instalador de un solo gesto. Genera tallos con grosor, rabillos y hojas (instancias de
+> unas pocas hojas modelo, o una sola malla) con materiales de Arnold y texturas de hoja y
+> de corteza en cuatro tamaños, de 512 a 4K.
 
 Funciona igual en Windows y en macOS, con el Python que trae Maya: no hay que instalar
 nada más (no usa NumPy).
@@ -55,7 +56,8 @@ acoplar a un lado de Maya y recuerda dónde la dejaste. Los pasos se activan en 
 2. **Origen** (opcional). Pulsa **Clic en el visor** y haz clic sobre la superficie donde
    nace cada planta; **Quitar** los borra. Sin orígenes, la planta nace en el centro de la
    base de la superficie.
-3. **Aspecto.** Tipo de tallo, forma de hoja, Tamaño, Densidad de hojas y Grosor del tallo.
+3. **Aspecto.** Tipo de tallo, forma de hoja, Tamaño, Densidad de hojas, Grosor del tallo y
+   Resolución de texturas (ver **Texturas** más abajo).
    Pulsa **Crecer** para ver la forma como líneas (es rápido). Cambia ajustes y vuelve a
    pulsar Crecer hasta que te guste; **Crecer más** la hace más grande sin empezar de cero
    y **Reiniciar** borra las líneas.
@@ -91,9 +93,34 @@ y usa **… → Copiar los ajustes de la planta seleccionada** para repetirla o 
 y caja, y una pequeña ruina.
 
 **Arnold.** Si Arnold (MtoA) está cargado al crear la malla, cada pieza lleva además un
-material de Arnold que toma el color de cada hoja; las hojas dejan pasar algo de luz y a
-contraluz brillan. Si no está cargado, la planta solo lleva el material del visor y en el
-render todas las hojas salen del mismo verde.
+material de Arnold que toma el color de cada hoja y le suma las texturas: nervios, relieve,
+brillo y la luz que deja pasar la hoja, que a contraluz brilla y enseña los nervios. Si no
+está cargado, la planta solo lleva el material del visor y en el render todas las hojas
+salen del mismo verde.
+
+**Texturas.** Las hojas y los tallos llevan texturas que vienen con Trepadora (no hace falta
+Substance ni ningún otro programa). En el visor se ven los nervios con la tecla **6**
+(texturas); en el render, siempre. Cada textura está en cuatro tamaños y el ajuste
+**Resolución de texturas** del paso 3 elige cuál se usa:
+
+| Resolución | Para qué |
+|---|---|
+| 512 | juegos y escenas con muchas plantas |
+| 1K | clase (por defecto) |
+| 2K | renders |
+| 4K | renders de cerca |
+
+Cambiarla cambia también las plantas que ya están en la escena, y se recuerda para la
+próxima vez. No es un ajuste de cada planta: no se guarda en los preajustes. Si falta un
+tamaño en la carpeta, se usa el siguiente más pequeño que haya (o uno más grande si no hay
+ninguno) y la ventana lo avisa; por ejemplo, si no vas a usar 4K puedes borrar la carpeta
+`texturas/4k` (unos 45 MB). Al renderizar, Arnold puede crear archivos `.tx` junto a las
+texturas: son una caché y se pueden borrar.
+
+Las escenas guardan la ruta de las texturas. Si abres una escena hecha en otro ordenador
+(en casa con macOS y en clase con Windows, por ejemplo), el plug-in apunta sus texturas a la
+carpeta de Trepadora de este ordenador, con la misma resolución, y lo dice en la línea de
+mensajes de Maya.
 
 ## Uso desde el Script Editor (avanzado)
 
@@ -214,8 +241,12 @@ scripts/trepadora/
   superficie_maya.py  consultas de punto más cercano sobre mallas de Maya
   escenas.py          escenas de prueba (sencilla y ruina) y sus ajustes
   prototipo.py        crea en Maya la vista previa, la planta y sus materiales
+  texturas.py         texturas de hojas y tallos: resoluciones, rutas y cambio en la escena
   i18n/               textos por idioma (es.json); la interfaz se puede traducir
+texturas/             texturas JPEG en 512/, 1k/, 2k/ y 4k/: <juego>_<mapa>.jpg
 herramientas/
+  texturas/generar_texturas.py  dibuja las texturas de las hojas (NumPy y Pillow, sin Maya)
+  painter/            scripts para Substance 3D Painter: la corteza (Wood Bark) y el puente
   prueba_ventana.py   prueba de la ventana dentro de Maya, botón a botón, con capturas
   ensayo_sin_maya/    ensayo de la ventana con un Maya simulado (necesita PySide6)
   prueba_instancias.py  prueba de las hojas como instancias (mayapy)
@@ -227,6 +258,23 @@ tests/                pruebas sin Maya, con una escena simulada
 
 Pruebas automáticas (fuera de Maya, con Python 3): `python -m unittest discover tests`.
 Las de la ventana necesitan PySide6 (`pip install PySide6`); si no está, se saltan.
+
+## Rehacer las texturas
+
+No hace falta para usar Trepadora: las texturas ya vienen hechas. Cada forma de hoja tiene
+el juego `hoja_<forma>` (detalle, normal, rugosidad y traslucidez) y los tallos el juego
+`corteza` (detalle, normal y rugosidad). El *detalle* es un gris que vale 0,5 de media: el
+material lo multiplica por el color de cada hoja, así que las hojas conservan sus tonos.
+Los relieves son mapas de normales de tipo OpenGL.
+
+- **Hojas:** `python herramientas/texturas/generar_texturas.py` las dibuja en el espacio UV
+  de cada forma de hoja y las guarda en `texturas/` a los cuatro tamaños (necesita NumPy y
+  Pillow). Con `--solo 512,1k` hace solo esos tamaños. No toca la corteza salvo que se
+  añada `--con-corteza`, que la sustituye por una corteza procedural para quien no tenga
+  Painter.
+- **Corteza:** sale de Substance 3D Painter con el material *Wood Bark*, mediante
+  `herramientas/painter/corteza_painter.py`, que se ejecuta dentro de Painter con el
+  complemento `herramientas/painter/trepadora_puente.py`.
 
 ## Traducir la interfaz
 
