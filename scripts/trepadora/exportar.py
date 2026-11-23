@@ -91,10 +91,10 @@ def hornear_hojas(modelos, matrices_modelo, posiciones, giros, escalas, indices,
                   colores=None, matriz_instanciador=None):
     """Una malla con todas las hojas que dibuja un instanciador.
 
-    Cada hoja es su modelo movido por la matriz del modelo, la de su partícula
-    (escala, giro y posición) y la del instanciador, en ese orden, que es
-    como las compone Maya. ``colores`` (el rgbPP) multiplica los del modelo,
-    como hace Arnold.
+    Cada hoja es su modelo movido por la matriz propia del modelo, la de su
+    partícula (escala, giro y posición) y la del instanciador en el mundo, en
+    ese orden: así las hojas se mueven con la planta igual que los tallos.
+    ``colores`` (el rgbPP) multiplica los del modelo, como hace Arnold.
     """
     malla = geometria.Malla()
     for i, (p, g, s) in enumerate(zip(posiciones, giros, escalas)):
@@ -257,8 +257,8 @@ def _hijo(padre, nombre, tipo=None):
     return None
 
 
-def _matriz(nodo):
-    return tuple(_cmds().xform(nodo, query=True, matrix=True, worldSpace=True))
+def _matriz(nodo, mundo=True):
+    return tuple(_cmds().xform(nodo, query=True, matrix=True, worldSpace=mundo))
 
 
 def leer_malla(transform, mundo=True):
@@ -294,9 +294,13 @@ def leer_malla(transform, mundo=True):
 
 
 def _arrays(forma, atributo):
-    """Valores por partícula (los actuales o, si no hay, los del estado inicial)."""
+    """Valores por partícula: los del estado inicial (los que guarda Trepadora) o los actuales.
+
+    Leer los actuales de unas partículas fuera de su fotograma inicial hace que
+    Maya avise de que hay que rebobinar; los iniciales se leen sin más.
+    """
     cmds = _cmds()
-    for nombre in (atributo, atributo + "0"):
+    for nombre in (atributo + "0", atributo):
         if cmds.attributeQuery(nombre, node=forma, exists=True):
             valores = cmds.getAttr(forma + "." + nombre)
             if valores:
@@ -338,7 +342,9 @@ def hojas_de(planta):
     if forma is None or not modelos:
         return geometria.Malla(), []
     mallas = [leer_malla(m, mundo=False) if m else geometria.Malla() for m in modelos]
-    matrices = [_matriz(m) if m else IDENTIDAD for m in modelos]
+    # La matriz propia de cada modelo, sin la de sus padres: la de la planta
+    # ya llega con la del instanciador, que cuelga de ella.
+    matrices = [_matriz(m, mundo=False) if m else IDENTIDAD for m in modelos]
     posiciones = _arrays(forma, "position")
     giros = _arrays(forma, "giroPP")
     escalas = _arrays(forma, "escalaPP")

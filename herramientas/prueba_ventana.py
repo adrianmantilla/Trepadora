@@ -654,60 +654,57 @@ def _reimportar(ruta, formato):
                         archivo = cmds.getAttr(nodo + ".fileTextureName")
                         dato["texturas"].append([archivo, os.path.isfile(archivo)])
         mallas.append(dato)
-    borrar = [n for n in nuevos if cmds.objExists(n) and n.count("|") == 1
-              and cmds.nodeType(n) == "transform"]
-    if borrar:
-        cmds.delete(borrar)
     if formato == "fbx" and cmds.namespace(exists="reimportado"):
         cmds.namespace(removeNamespace="reimportado", deleteNamespaceContent=True)
+    # Lo que el importador de FBX deja fuera del espacio de nombres (materiales).
+    for nodo in nuevos:
+        try:
+            if cmds.objExists(nodo) and not cmds.lockNode(nodo, query=True)[0]:
+                cmds.delete(nodo)
+        except (RuntimeError, ValueError):
+            pass
     return mallas
 
 
 def _comparar_horneado(planta):
-    """Cajas de las hojas horneadas y de las del instanciador, quieta y movida.
+    """Mueve y gira la planta y mira que lo horneado se mueva con ella, entero.
 
-    Para saber qué hacer si no coinciden, también las cajas de otras maneras de
-    componer las matrices (la del modelo sin sus padres, sin la del instanciador).
+    Las hojas y los tallos horneados con la planta movida deben ser los de la
+    planta quieta movidos con la matriz de la planta. Para saber qué falla si
+    no, también las cajas con la matriz del modelo en el mundo (con sus padres).
+    Deja capturas del instanciador y de lo horneado con la planta movida.
     """
     from trepadora import exportar as ex
 
-    instanciador = ex.instanciador_de(planta)
     original = ex._matriz
     datos = {}
+    quietas = {}
     for caso, mover, girar in (("quieta", (0, 0, 0), (0, 0, 0)),
                                ("movida", (40, 0, 25), (0, 30, 0))):
         cmds.xform(planta, translation=mover, rotation=girar, worldSpace=True)
         _procesar()
-        d = {"caja_instancias": _redondear(cmds.exactWorldBoundingBox(instanciador)),
-             "caja_tallos": _redondear(cmds.exactWorldBoundingBox(planta + "|trepadora_tallos"))}
-
-        def local(nodo):
-            if cmds.nodeType(nodo) == "instancer":
-                return original(nodo)
-            return tuple(cmds.xform(nodo, query=True, matrix=True, worldSpace=False))
-
-        variantes = {"modelo_local": local,
-                     "sin_instanciador": lambda n: (ex.IDENTIDAD if cmds.nodeType(n) == "instancer"
-                                                    else original(n))}
-        for nombre, funcion in variantes.items():
-            ex._matriz = funcion
-            try:
-                caja = ex.caja(ex.hojas_de(planta)[0])
-                d["caja_" + nombre] = _redondear(caja[0] + caja[1]) if caja else None
-            finally:
-                ex._matriz = original
-        grupo, creados, informe = ex.hornear(planta, nombre="horneada_" + caso)
-        hojas = grupo + "|hojas"
-        tallos = grupo + "|tallos"
-        d["caja_horneada"] = _redondear(cmds.exactWorldBoundingBox(hojas))
-        d["caja_tallos_horneados"] = _redondear(cmds.exactWorldBoundingBox(tallos))
-        d["diferencia_hojas"] = round(max(abs(a - b) for a, b in
-                                          zip(d["caja_horneada"], d["caja_instancias"])), 2)
-        d["diferencia_tallos"] = round(max(abs(a - b) for a, b in
-                                           zip(d["caja_tallos_horneados"], d["caja_tallos"])), 2)
-        d["informe"] = informe
-        if caso == "movida":
-            caja = d["caja_instancias"]
+        hojas, _ = ex.hojas_de(planta)
+        tallos = ex.tallos_de(planta)
+        d = {"caja_hojas": _redondear(sum(ex.caja(hojas), ())),
+             "caja_tallos": _redondear(sum(ex.caja(tallos), ()))}
+        ex._matriz = lambda nodo, mundo=True: original(nodo, True)
+        try:
+            caja = ex.caja(ex.hojas_de(planta)[0])
+            d["caja_hojas_modelo_en_mundo"] = _redondear(sum(caja, ())) if caja else None
+        finally:
+            ex._matriz = original
+        if caso == "quieta":
+            quietas = {"hojas": hojas, "tallos": tallos}
+        else:
+            m = original(planta)
+            for nombre, malla in (("hojas", hojas), ("tallos", tallos)):
+                antes = quietas[nombre].vertices
+                d["error_" + nombre] = round(max(
+                    (max(abs(a - b) for a, b in zip(ex.transformar(p, m), q))
+                     for p, q in zip(antes, malla.vertices)), default=0.0), 4)
+                d["vertices_" + nombre] = [len(antes), len(malla.vertices)]
+            grupo, creados, informe = ex.hornear(planta, nombre="horneada")
+            caja = d["caja_tallos"]
             centro = [(caja[i] + caja[i + 3]) / 2.0 for i in range(3)]
             _vista((centro[0] - 280, centro[1] + 200, centro[2] + 480), centro, 42)
             cmds.setAttr(grupo + ".visibility", 0)
@@ -716,7 +713,7 @@ def _comparar_horneado(planta):
             cmds.setAttr(planta + ".visibility", 0)
             d["visor_horneada"] = _captura_visor("7_horneada_movida")
             cmds.setAttr(planta + ".visibility", 1)
-        cmds.delete([n for n in creados if cmds.objExists(n)])
+            cmds.delete([n for n in creados if cmds.objExists(n)])
         datos[caso] = d
     cmds.xform(planta, translation=(0, 0, 0), rotation=(0, 0, 0), worldSpace=True)
     return datos
