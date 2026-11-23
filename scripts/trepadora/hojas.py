@@ -43,8 +43,8 @@ class ParametrosHojas:
     # Tamaño de esas matas, en largos de hoja.
     escala_manchas: float = 9.0
     # Cuántas hojas tiran a bronce, como la hiedra en invierno (con 0.015,
-    # alrededor de una de cada cien). Salen en rodales de hojas viejas, cerca
-    # de la raíz.
+    # alrededor de una de cada ciento veinte). Salen sueltas, nunca dos juntas,
+    # entre las hojas viejas de la parte baja.
     bronce: float = 0.015
 
 
@@ -88,6 +88,9 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
     alto_min = min(alturas) if alturas else 0.0
     alto_total = max(max(alturas) - alto_min, 1e-6) if alturas else 1.0
     matas = _campo_de_matas(crecimiento, escala_manchas, p.semilla)
+    # Hojas bronce ya puestas, por celdas: una bronce no sale pegada a otra.
+    bronces = {}
+    lado_bronce = max(p.tamano * _BRONCE_SEPARACION, 1e-6)
     for i_rama, rama in enumerate(crecimiento.ramas):
         n = len(rama.puntos)
         if n < 2:
@@ -247,6 +250,11 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                 rodal = _ruido(punto, escala_manchas * 0.5, p.semilla + 57)
                 if rng.random() < p.bronce * min(_BRONCE_MAX, _K_BRONCE * max(0.0, rodal - _BRONCE_UMBRAL)):
                     tinte = rng.uniform(0.35, 0.85)
+                    if _bronce_cerca(bronces, base, lado_bronce):
+                        tinte = 0.0
+                    else:
+                        celda = tuple(int(math.floor(c / lado_bronce)) for c in base)
+                        bronces.setdefault(celda, []).append(base)
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
                               tamano=tamano, edad=edad, lobulado=lobulado,
                               tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.14))),
@@ -328,18 +336,33 @@ _K_DEG_TAMANO = 0.6
 _K_CLARO_LEJOS = 0.2
 # Rabillos más largos en las matas (bulto) que en los claros.
 _K_RABILLO = 3.0
-# Rodales de bronce: salen donde el ruido pasa de _BRONCE_UMBRAL y, dentro de
-# un rodal, tiran a bronce como mucho _BRONCE_MAX veces la proporción pedida
-# (con bronce 0.015, una hoja de cada ocho). Así quedan sueltas entre las
-# verdes y no en una mancha marrón.
-_BRONCE_UMBRAL = 0.5
+# Rodales de bronce: salen donde el ruido pasa de _BRONCE_UMBRAL (casi toda la
+# parte baja y vieja de la planta) y ahí tiran a bronce como mucho _BRONCE_MAX
+# veces la proporción pedida. Así quedan sueltas entre las verdes y no en una
+# mancha marrón.
+_BRONCE_UMBRAL = 0.35
 _K_BRONCE = 200.0
-_BRONCE_MAX = 8.0
+_BRONCE_MAX = 4.0
+# Distancia mínima entre dos hojas bronce, en tamaños de hoja: de dos en dos o
+# de tres en tres, juntas, ya se leen como una mancha rojiza.
+_BRONCE_SEPARACION = 2.0
 # Tamaño de las hojas según la generación de la rama (tronco, rama, ramilla...).
 _ESCALA_GEN = (1.12, 1.0, 0.86, 0.76, 0.7)
 # Lo más que apunta hacia arriba una hoja en una pared (seno del ángulo con
 # la horizontal): unos 17 grados.
 _SUBIDA_MAX = 0.3
+
+
+def _bronce_cerca(bronces, punto, lado):
+    """True si alguna hoja de ``bronces`` (por celdas de ``lado``) queda a menos de ``lado``."""
+    cx, cy, cz = (int(math.floor(c / lado)) for c in punto)
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                for otra in bronces.get((cx + dx, cy + dy, cz + dz), ()):
+                    if v.distancia(otra, punto) < lado:
+                        return True
+    return False
 
 
 def _tumbar_en_remate(superficie, base, adelante, cara, normal_sup, tamano):

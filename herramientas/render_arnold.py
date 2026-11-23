@@ -2,14 +2,16 @@
 
 No forma parte del plugin. Crea la ruina con hiedra, pone un cielo (aiSkyDomeLight)
 y un sol con sombra suave, y renderiza con Arnold las vistas de la ruina de
-capturas_maya.py. Guarda también la escena, por si se quiere renderizar a mano.
+capturas_maya.py, más una a contraluz. Guarda también la escena, por si se
+quiere renderizar a mano.
 
 Uso desde la terminal, con mayapy (no hace falta abrir Maya)::
 
     TREPADORA_RAIZ=/ruta/Trepadora mayapy /ruta/Trepadora/herramientas/render_arnold.py \\
         /ruta/de/salida prefijo [vista ...]
 
-Sin vistas, renderiza «general». Si Arnold no tiene licencia, la imagen sale
+Vistas: general, ventana, columna y contraluz; sin vistas, renderiza
+«general». Si Arnold no tiene licencia, la imagen sale
 con marca de agua, que para comparar versiones no molesta.
 """
 
@@ -29,7 +31,13 @@ ANCHO, ALTO = 1280, 720
 # capturas del visor.
 CIELO = dict(color=(0.75, 0.85, 1.0), intensidad=1.0)
 SOL = dict(color=(1.0, 0.92, 0.8), intensidad=2.5, giro=(-50, -35, 0), angulo=2.0)
+# Vistas propias del render. «contraluz» mira la ventana con el sol bajo detrás
+# del muro: se ve la luz que atraviesa las hojas que cuelgan en el hueco.
+CONTRALUZ = dict(ojo=(-40, 140, 260), mira=(-20, 110, 0), fov=40, sol=(-28, 160, 0))
 PIEDRA = (0.55, 0.52, 0.47)
+# Manchas de la piedra: ruido en el espacio de la escena (rasgos de unas 15
+# unidades), entre un tono más oscuro y otro más claro que PIEDRA.
+DESGASTE = dict(escala=(0.07, 0.07, 0.07), oscuro=0.7, claro=1.15, relieve=0.4)
 SUELO = (0.32, 0.31, 0.28)
 
 
@@ -52,9 +60,34 @@ def _material_piedra(cmds, nombre, color, rugosidad=0.85):
     cmds.setAttr(shader + ".baseColor", *color, type="double3")
     cmds.setAttr(shader + ".specular", 0.15)
     cmds.setAttr(shader + ".specularRoughness", rugosidad)
+    _desgaste(cmds, nombre, shader, color)
     grupo = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=nombre + "SG")
     cmds.connectAttr(shader + ".outColor", grupo + ".surfaceShader", force=True)
     return grupo
+
+
+def _desgaste(cmds, nombre, shader, color):
+    """Manchas y relieve de ruido en la piedra, para que no parezca plástico.
+
+    Solo decora el render de prueba. Si algún nodo o atributo no existe en
+    esta versión de Arnold, la piedra se queda lisa y el render sigue.
+    """
+    try:
+        ruido = cmds.shadingNode("aiNoise", asTexture=True, name=nombre + "_manchas")
+        cmds.setAttr(ruido + ".octaves", 4)
+        cmds.setAttr(ruido + ".scale", *DESGASTE["escala"], type="double3")
+        cmds.setAttr(ruido + ".coordSpace", 0)  # mundo
+        oscuro = tuple(c * DESGASTE["oscuro"] for c in color)
+        claro = tuple(min(1.0, c * DESGASTE["claro"]) for c in color)
+        cmds.setAttr(ruido + ".color1", *oscuro, type="double3")
+        cmds.setAttr(ruido + ".color2", *claro, type="double3")
+        cmds.connectAttr(ruido + ".outColor", shader + ".baseColor", force=True)
+        relieve = cmds.shadingNode("bump2d", asUtility=True, name=nombre + "_relieve")
+        cmds.setAttr(relieve + ".bumpDepth", DESGASTE["relieve"])
+        cmds.connectAttr(ruido + ".outColorR", relieve + ".bumpValue", force=True)
+        cmds.connectAttr(relieve + ".outNormal", shader + ".normalCamera", force=True)
+    except RuntimeError as error:
+        print("render_arnold: piedra sin desgaste ({})".format(error))
 
 
 def _luces(cmds):
@@ -68,6 +101,7 @@ def _luces(cmds):
     cmds.setAttr(forma_sol + ".color", *SOL["color"], type="double3")
     if cmds.attributeQuery("aiAngle", node=forma_sol, exists=True):
         cmds.setAttr(forma_sol + ".aiAngle", SOL["angulo"])
+    return sol
 
 
 def _ajustes(cmds):
@@ -77,7 +111,7 @@ def _ajustes(cmds):
     opciones = "defaultArnoldRenderOptions"
     for atributo, valor in (("AASamples", 4), ("GIDiffuseSamples", 2), ("GISpecularSamples", 2),
                             ("GITransmissionSamples", 2), ("GISssSamples", 2),
-                            ("GIDiffuseDepth", 1), ("GITransmissionDepth", 4),
+                            ("GIDiffuseDepth", 2), ("GITransmissionDepth", 4),
                             ("abortOnLicenseFail", 0)):
         if cmds.attributeQuery(atributo, node=opciones, exists=True):
             cmds.setAttr(opciones + "." + atributo, valor)
@@ -107,9 +141,9 @@ def preparar(cmds, semilla=1):
     for nodo in cmds.ls("prueba_*", type="transform"):
         if cmds.listRelatives(nodo, shapes=True, type="mesh"):
             cmds.sets(nodo, edit=True, forceElement=suelo if nodo == "prueba_suelo" else piedra)
-    _luces(cmds)
+    sol = _luces(cmds)
     _ajustes(cmds)
-    return segundos
+    return segundos, sol
 
 
 def _camara(cmds, vista):
@@ -137,11 +171,14 @@ def renderizar(carpeta, prefijo, vistas=("general",), semilla=1):
     import capturas_maya
     if not os.path.isdir(carpeta):
         os.makedirs(carpeta)
-    informe = ["Arnold {}".format(cmds.pluginInfo("mtoa", query=True, version=True))]
-    segundos = preparar(cmds, semilla)
+    informe = ["MtoA {}".format(cmds.pluginInfo("mtoa", query=True, version=True))]
+    segundos, sol = preparar(cmds, semilla)
     informe.append("crecimiento y mallas: {:.2f} s".format(segundos))
+    todas = dict(capturas_maya.VISTAS_RUINA, contraluz=CONTRALUZ)
     for nombre in vistas:
-        camara = _camara(cmds, capturas_maya.VISTAS_RUINA[nombre])
+        vista = todas[nombre]
+        cmds.setAttr(sol + ".rotate", *vista.get("sol", SOL["giro"]), type="double3")
+        camara = _camara(cmds, vista)
         base = os.path.join(carpeta, "{}_arnold_{}".format(prefijo, nombre))
         cmds.setAttr("defaultRenderGlobals.imageFilePrefix", base, type="string")
         inicio = time.time()

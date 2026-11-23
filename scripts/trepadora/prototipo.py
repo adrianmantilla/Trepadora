@@ -204,13 +204,16 @@ def _asignar_material(transform, nombre, color, brillo=1.0):
     return grupo
 
 
-# Ajustes del aiStandardSurface de cada pieza. Las hojas son finas: con
-# thinWalled, «subsurface» es la luz que las atraviesa (a contraluz brillan).
+# Ajustes del aiStandardSurface de cada pieza. «base» a 1 (Arnold trae 0.8)
+# para que el color sea el de los vértices, como en el visor. Las hojas son
+# finas: con thinWalled, «subsurface» es la luz que las atraviesa (a contraluz
+# brillan), pero lo que pasa al otro lado se le quita a la cara iluminada; la
+# hiedra es gruesa y cerosa, deja pasar poca.
 _ARNOLD = {
-    "trepadora_tallos": {"specular": 0.15, "specularRoughness": 0.6},
-    "trepadora_hojas": {"specular": 0.45, "specularRoughness": 0.35, "thinWalled": 1,
-                        "subsurface": 0.3},
-    "trepadora_rabillos": {"specular": 0.25, "specularRoughness": 0.45},
+    "trepadora_tallos": {"base": 1.0, "specular": 0.15, "specularRoughness": 0.6},
+    "trepadora_hojas": {"base": 1.0, "specular": 0.5, "specularRoughness": 0.32,
+                        "thinWalled": 1, "subsurface": 0.2},
+    "trepadora_rabillos": {"base": 1.0, "specular": 0.25, "specularRoughness": 0.45},
 }
 
 
