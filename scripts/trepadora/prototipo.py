@@ -19,7 +19,7 @@ import math
 
 from maya import cmds
 
-from . import deshacer, geometria
+from . import deshacer, geometria, texturas
 from .crecimiento import Crecimiento, Parametros
 from .hojas import ParametrosHojas, colocar_hojas
 from .i18n import t
@@ -183,11 +183,13 @@ def _elegir(valor, opciones, por_defecto, clave_aviso, **datos):
 
 def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instancias=True,
                  forma_hoja="hiedra", tipo_tallo="lenoso", hoja_propia=None, lados=None,
-                 resumen=None):
+                 resumen=None, resolucion_texturas=None):
     """Crea tallos, hojas y rabillos dentro de un grupo nuevo (ver ``ejecutar``).
 
     ``lados``: lados del tubo de los tallos (por defecto, los del tipo de tallo).
     ``resumen``: si se da un diccionario, se rellena con ``hojas`` y ``modelos``.
+    ``resolucion_texturas``: una de ``texturas.RESOLUCIONES`` (por defecto, la
+    elegida en la ventana).
     """
     forma_hoja = _elegir(forma_hoja, geometria.FORMAS_HOJA, "hiedra", "forma_desconocida",
                          forma=forma_hoja)
@@ -203,32 +205,38 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instan
     datos_hojas.setdefault("semilla", semilla)
     hojas = colocar_hojas(crecimiento, ParametrosHojas(**datos_hojas))
 
+    resolucion = resolucion_texturas or texturas.resolucion_actual()
+    hoja_tex = texturas.juego_hoja(forma_hoja)
     grupo = _bajo(None, cmds.group(empty=True, name=GRUPO_PLANTA))
+    # (nombre de la pieza, malla, color, material, juego de texturas)
     piezas = [
         ("trepadora_tallos",
          geometria.malla_tallos(crecimiento, radios, lados=lados, semilla=semilla,
                                 tipo=tipo_tallo),
-         (0.30, 0.21, 0.13)),
+         (0.30, 0.21, 0.13), "trepadora_tallos", "corteza"),
         ("trepadora_rabillos", geometria.malla_peciolos(hojas, tipo=tipo_tallo),
-         (0.25, 0.33, 0.12)),
+         (0.25, 0.33, 0.12), "trepadora_rabillos", "corteza"),
     ]
     modelos = 0
     if instancias and hojas:
         try:
-            modelos = _crear_hojas_instanciadas(hojas, grupo, forma_hoja, semilla, hoja_propia)
+            modelos = _crear_hojas_instanciadas(hojas, grupo, forma_hoja, semilla, hoja_propia,
+                                                resolucion)
         except RuntimeError as error:
             cmds.warning(t("sin_instancias", error=error))
     if not modelos:
         piezas.insert(1, ("trepadora_hojas",
                           geometria.malla_hojas(hojas, semilla=semilla, forma=forma_hoja),
-                          (0.16, 0.38, 0.10)))
-    for nombre, malla, color in piezas:
+                          (0.16, 0.38, 0.10), "trepadora_" + hoja_tex, hoja_tex))
+    for nombre, malla, color, material, juego in piezas:
         if not malla.conteos:
             continue
         brillo = 1.0 if nombre == "trepadora_tallos" else _BRILLO_HOJAS
         transform = _crear_malla(nombre, malla, brillo)
-        sombreado = _asignar_material(transform, nombre + "_mat", color, brillo)
-        _material_arnold(transform, sombreado, nombre, color, brillo)
+        textura = (juego, resolucion) if juego != "corteza" else None
+        sombreado = _asignar_material(transform, material + "_mat", color, brillo, textura)
+        _material_arnold(transform, sombreado, material, color, brillo, clave=nombre,
+                         textura=(juego, resolucion))
         cmds.parent(transform, grupo)
     if resumen is not None:
         resumen.update(hojas=len(hojas), modelos=modelos)
@@ -244,7 +252,7 @@ def crear_planta(crecimiento, paso, ajustes_hojas, grosor=1.0, semilla=1, instan
 _COLOR_HOJAS = (0.16, 0.38, 0.10)
 
 
-def _crear_hojas_instanciadas(hojas, grupo, forma, semilla, hoja_propia=None):
+def _crear_hojas_instanciadas(hojas, grupo, forma, semilla, hoja_propia=None, resolucion=None):
     """Hojas modelo ocultas, una partícula por hoja y un instanciador.
 
     Cada partícula lleva el giro, la escala y el modelo de su hoja, y en rgbPP
@@ -263,7 +271,9 @@ def _crear_hojas_instanciadas(hojas, grupo, forma, semilla, hoja_propia=None):
     modelos_grp = _bajo(grupo, cmds.group(empty=True, name="trepadora_hojas_modelos",
                                           parent=grupo))
     try:
-        return _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal)
+        return _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal,
+                                           (texturas.juego_hoja(forma),
+                                            resolucion or texturas.resolucion_actual()))
     except RuntimeError:
         # Sin restos a medias: se borra lo creado y crear_planta hace la malla.
         restos = [modelos_grp] + (cmds.listRelatives(grupo, children=True, fullPath=True,
@@ -292,7 +302,7 @@ def _bajo(padre, nombre):
     return ruta if cmds.objExists(ruta) else _largo(nombre)
 
 
-def _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal):
+def _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal, textura):
     from . import instancias
 
     propia = _modelo_propio(hoja_propia, modelos_grp) if hoja_propia else None
@@ -307,11 +317,13 @@ def _crear_modelos_e_instancias(datos, grupo, modelos_grp, hoja_propia, a_lineal
             # El visor no enseña los colores de vértice de las instancias: cada
             # tono lleva su propio material, del color de su grupo. Arnold no
             # lo usa (toma los colores de vértice y el rgbPP de cada hoja).
+            juego = textura[0]
             sombreado = _asignar_material(
-                transform, "trepadora_hojas_tono{}_mat".format(modelo.grupo + 1), modelo.color,
-                _BRILLO_HOJAS)
-            _material_arnold(transform, sombreado, "trepadora_hojas_inst", _COLOR_HOJAS,
-                             _BRILLO_HOJAS, clave="trepadora_hojas", por_instancia=True)
+                transform, "trepadora_{}_tono{}_mat".format(juego, modelo.grupo + 1),
+                modelo.color, _BRILLO_HOJAS, textura)
+            _material_arnold(transform, sombreado, "trepadora_{}_inst".format(juego),
+                             _COLOR_HOJAS, _BRILLO_HOJAS, clave="trepadora_hojas",
+                             por_instancia=True, textura=textura)
             modelos.append(_bajo(modelos_grp, cmds.parent(transform, modelos_grp)[0]))
         indices = [float(i) for i in datos.indices]
         proporciones = [instancias.proporcion(c, datos.modelos[i].color, a_lineal)
@@ -426,18 +438,61 @@ def _suavizar(fn):
         pass
 
 
-def _asignar_material(transform, nombre, color, brillo=1.0):
+def _asignar_material(transform, nombre, color, brillo=1.0, textura=None):
+    """Lambert para el visor (y para otros programas, si se exporta la planta).
+
+    Con ``textura`` = (juego, resolución), su color lleva encima el mapa de
+    detalle del juego (los nervios de la hoja), multiplicado por el color.
+    """
     if cmds.objExists(nombre):
         material = nombre
         grupo = cmds.listConnections(material + ".outColor", type="shadingEngine")[0]
     else:
         material = cmds.shadingNode("lambert", asShader=True, name=nombre)
-        cmds.setAttr(material + ".color", *_a_lineal(color, _con_gestion_de_color(), brillo),
-                     type="double3")
+        lineal = _a_lineal(color, _con_gestion_de_color(), brillo)
+        cmds.setAttr(material + ".color", *lineal, type="double3")
+        if textura:
+            imagen = _textura_visor(textura, nombre + "_detalle", lineal)
+            if imagen:
+                cmds.connectAttr(imagen + ".outColor", material + ".color", force=True)
         grupo = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name=nombre + "SG")
         cmds.connectAttr(material + ".outColor", grupo + ".surfaceShader", force=True)
     cmds.sets(transform, edit=True, forceElement=grupo)
     return grupo
+
+
+def _textura_visor(textura, nombre, color):
+    """Nodo ``file`` con el mapa de detalle, multiplicado por 2 × ``color`` (o None)."""
+    juego, resolucion = textura
+    ruta = texturas.ruta(juego, "detalle", resolucion)
+    if not ruta:
+        return None
+    try:
+        imagen = cmds.shadingNode("file", asTexture=True, isColorManaged=True, name=nombre)
+        colocacion = cmds.shadingNode("place2dTexture", asUtility=True, name=nombre + "_uv")
+        cmds.connectAttr(colocacion + ".outUV", imagen + ".uvCoord", force=True)
+        cmds.connectAttr(colocacion + ".outUvFilterSize", imagen + ".uvFilterSize", force=True)
+        cmds.setAttr(imagen + ".fileTextureName", ruta, type="string")
+        _espacio_raw(imagen)
+        cmds.setAttr(imagen + ".colorGain", *[2.0 * c for c in color], type="double3")
+        texturas.marcar(imagen, juego, "detalle")
+        return imagen
+    except RuntimeError as error:
+        cmds.warning(t("sin_texturas", error=error))
+        return None
+
+
+def _espacio_raw(nodo):
+    """Los mapas son datos, no colores para la vista: que Maya no los convierta."""
+    for atributo, valor in (("ignoreColorSpaceFileRules", 1), ("colorSpace", "Raw")):
+        try:
+            if cmds.attributeQuery(atributo, node=nodo, exists=True):
+                if isinstance(valor, str):
+                    cmds.setAttr(nodo + "." + atributo, valor, type="string")
+                else:
+                    cmds.setAttr(nodo + "." + atributo, valor)
+        except RuntimeError:
+            pass
 
 
 # Ajustes del aiStandardSurface de cada pieza. «base» a 1 (Arnold trae 0.8)
@@ -464,7 +519,7 @@ def _arnold_cargado():
 
 
 def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
-                     por_instancia=False):
+                     por_instancia=False, textura=None):
     """Material de Arnold para la pieza, si Arnold (MtoA) está cargado.
 
     El lambert del grupo de sombreado queda para el visor; Arnold usa en su
@@ -472,7 +527,9 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
     de cada hoja de los colores de vértice. Sin esto, en el render todas las
     hojas saldrían del mismo verde. ``clave`` elige los ajustes de _ARNOLD
     (por defecto, los de ``nombre``). Con ``por_instancia``, el color de los
-    vértices se multiplica por el rgbPP de cada instancia.
+    vértices se multiplica por el rgbPP de cada instancia. Con ``textura`` =
+    (juego, resolución), las texturas del juego (ver texturas.py) ponen el
+    detalle, el relieve, la rugosidad y la traslucidez.
     """
     if not _arnold_cargado():
         return None
@@ -490,18 +547,69 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
                          type="double3")
             if por_instancia:
                 dato = _por_instancia(dato, nombre)
-            cmds.connectAttr(dato + ".outColor", shader + ".baseColor", force=True)
             ajustes = _ARNOLD.get(clave or nombre, {})
             if ajustes.get("subsurface"):
                 _color_traslucido(dato, shader, nombre)
             for atributo, valor in ajustes.items():
                 cmds.setAttr(shader + "." + atributo, valor)
+            if textura:
+                dato = _texturas_arnold(shader, dato, nombre, textura, ajustes)
+            cmds.connectAttr(dato + ".outColor", shader + ".baseColor", force=True)
         if cmds.attributeQuery("aiSurfaceShader", node=grupo, exists=True):
             _conectar(shader + ".outColor", grupo + ".aiSurfaceShader")
         return shader
     except RuntimeError as error:
         cmds.warning(t("sin_arnold", error=error))
         return None
+
+
+def _imagen_ai(juego, mapa, resolucion, multiplicar=None):
+    """Nodo aiImage de un mapa, compartido por todas las plantas (o None si falta)."""
+    nombre = "trepadora_tex_{}_{}_ai".format(juego, mapa)
+    if cmds.objExists(nombre):
+        return nombre
+    ruta = texturas.ruta(juego, mapa, resolucion)
+    if not ruta:
+        return None
+    imagen = cmds.shadingNode("aiImage", asTexture=True, name=nombre)
+    cmds.setAttr(imagen + ".filename", ruta, type="string")
+    _espacio_raw(imagen)
+    if multiplicar is not None:
+        cmds.setAttr(imagen + ".multiply", multiplicar, multiplicar, multiplicar, type="double3")
+    texturas.marcar(imagen, juego, mapa)
+    return imagen
+
+
+def _texturas_arnold(shader, dato, nombre, textura, ajustes):
+    """Conecta al shader los mapas de ``textura`` que haya; devuelve el nuevo color base.
+
+    El color base es el de ``dato`` por el detalle (×2: el detalle está
+    centrado en 0,5). La rugosidad y la traslucidez sustituyen a los valores
+    fijos de _ARNOLD; la traslucidez se escala por el «subsurface» de la pieza.
+    """
+    juego, resolucion = textura
+    try:
+        detalle = _imagen_ai(juego, "detalle", resolucion, multiplicar=2.0)
+        if detalle:
+            producto = cmds.shadingNode("aiMultiply", asUtility=True, name=nombre + "_detalle_ai")
+            cmds.connectAttr(dato + ".outColor", producto + ".input1", force=True)
+            cmds.connectAttr(detalle + ".outColor", producto + ".input2", force=True)
+            dato = producto
+        relieve = _imagen_ai(juego, "normal", resolucion)
+        if relieve:
+            mapa = cmds.shadingNode("aiNormalMap", asUtility=True, name=nombre + "_relieve_ai")
+            cmds.connectAttr(relieve + ".outColor", mapa + ".input", force=True)
+            cmds.connectAttr(mapa + ".outValue", shader + ".normalCamera", force=True)
+        rugosidad = _imagen_ai(juego, "rugosidad", resolucion)
+        if rugosidad:
+            cmds.connectAttr(rugosidad + ".outColorR", shader + ".specularRoughness", force=True)
+        if ajustes.get("subsurface") and "traslucidez" in texturas.mapas_de(juego):
+            luz = _imagen_ai(juego, "traslucidez", resolucion, multiplicar=ajustes["subsurface"])
+            if luz:
+                cmds.connectAttr(luz + ".outColorR", shader + ".subsurface", force=True)
+    except RuntimeError as error:
+        cmds.warning(t("sin_texturas", error=error))
+    return dato
 
 
 def _conectar(origen, destino):

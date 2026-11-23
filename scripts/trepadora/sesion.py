@@ -20,7 +20,7 @@ from maya import cmds
 
 from . import ajustes as aj
 from .ajustes import Aviso  # noqa: F401 (la ventana lo importa de aquí o de ajustes)
-from . import deshacer, escenas, prototipo
+from . import deshacer, escenas, prototipo, texturas
 from dataclasses import fields
 
 from .crecimiento import Crecimiento, Parametros
@@ -492,6 +492,22 @@ class Sesion:
         return resultado
 
     # ---------------------------------------------------------------- estado
+    # ------------------------------------------------------------ texturas
+    def resolucion_texturas(self):
+        return texturas.resolucion_actual()
+
+    def cambiar_texturas(self, resolucion):
+        """Pone las texturas de toda la escena a ``resolucion`` y la recuerda.
+
+        Devuelve ``(cambiadas, usada)``: cuántas texturas cambiaron y la
+        resolución que se usa de verdad (otra si faltan las pedidas).
+        """
+        hay = texturas.disponibles()
+        usada = resolucion
+        if hay and resolucion not in hay:
+            usada = min(hay, key=lambda r: abs(texturas.PIXELES[r] - texturas.PIXELES[resolucion]))
+        return texturas.cambiar_resolucion(resolucion), usada
+
     def estado(self):
         """Cifras para el pie de la ventana."""
         if self._crecimiento is None:

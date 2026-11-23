@@ -185,5 +185,15 @@
   "sin_hoja_propia": "Trepadora: «{nombre}» no es una malla de la escena. Se usan las hojas de la forma elegida.",
   "hoja_propia_sin_instancias": "Trepadora: la hoja propia solo funciona con instancias, así que las hojas serán instancias.",
   "hoja_propia_eje": "Trepadora: la hoja «{nombre}» no sale del origen hacia +Y; se ajusta a su altura. Para que quede bien, modélala con la base en el origen, la punta hacia +Y y la cara hacia +Z.",
-  "sin_instancias": "Trepadora: no se pudieron crear las instancias ({error}). Las hojas van en una sola malla."
+  "sin_instancias": "Trepadora: no se pudieron crear las instancias ({error}). Las hojas van en una sola malla.",
+  "ajuste_texturas": "Resolución de texturas",
+  "ayuda_texturas": "Tamaño de las texturas de hojas y tallos. 1K para clase; 2K o 4K para renders de cerca; 512 o 1K para juegos. Cambiarla cambia también las plantas que ya están en la escena.",
+  "opcion_texturas_512": "512 · juegos",
+  "opcion_texturas_1k": "1K · clase",
+  "opcion_texturas_2k": "2K · render",
+  "opcion_texturas_4k": "4K · render de cerca",
+  "texturas_cambiadas": "Texturas a {resolucion}: {n} texturas cambiadas en la escena.",
+  "texturas_sin_cambios": "Texturas a {resolucion}. Las plantas nuevas las usarán.",
+  "texturas_faltan": "Faltan las texturas de {resolucion} en la carpeta de Trepadora: se usan las de {usada}.",
+  "sin_texturas": "Trepadora: no se pudieron poner las texturas ({error}). La planta sale con sus colores, sin texturas."
 }

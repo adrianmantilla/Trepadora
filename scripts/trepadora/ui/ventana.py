@@ -32,6 +32,7 @@ except ImportError:  # fuera de Maya, para las pruebas
             QtWidgets.QWidget.show(self)
 
 from .. import ajustes as aj
+from .. import texturas
 from ..ajustes import Aviso
 from ..i18n import t
 
@@ -350,7 +351,32 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         formulario = self._formulario(caja)
         for control in aj.controles_del_grupo("aspecto"):
             self._fila(formulario, control)
+        # No es un ajuste de la planta (no va en los preajustes): vale para toda
+        # la escena y cambia también las plantas que ya están creadas.
+        control = aj.Control("texturas", "planta", "opcion", "aspecto", texturas.POR_DEFECTO,
+                             opciones=texturas.RESOLUCIONES)
+        self.combo_texturas = Opciones(control)
+        self.combo_texturas.poner(self.sesion.resolucion_texturas())
+        self.combo_texturas.cambiado.connect(self._cambiar_texturas)
+        etiqueta = QtWidgets.QLabel(t("ajuste_texturas"))
+        for widget in (etiqueta, self.combo_texturas):
+            widget.setToolTip(t("ayuda_texturas"))
+        formulario.addRow(etiqueta, self.combo_texturas)
         return caja
+
+    def _cambiar_texturas(self, resolucion):
+        resultado = self._hacer(self.sesion.cambiar_texturas, resolucion)
+        if resultado is None:
+            return
+        cambiadas, usada = resultado
+        nombre = t("opcion_texturas_" + resolucion).split(" ")[0]
+        if usada != resolucion:
+            self.avisar(t("texturas_faltan", resolucion=nombre,
+                          usada=t("opcion_texturas_" + usada).split(" ")[0]))
+        elif cambiadas:
+            self.avisar(t("texturas_cambiadas", resolucion=nombre, n=cambiadas), aviso=False)
+        else:
+            self.avisar(t("texturas_sin_cambios", resolucion=nombre), aviso=False)
 
     def _botones_crecer(self):
         fila = QtWidgets.QHBoxLayout()

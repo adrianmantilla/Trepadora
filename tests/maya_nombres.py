@@ -30,6 +30,8 @@ class Escena(object):
         self.nodos = []
         self.avisos = []
         self.conexiones = []    # (nodo origen, atributo, nodo destino, atributo)
+        self.arnold = False     # si MtoA está cargado
+        self.opciones = {}      # optionVar
 
     # ------------------------------------------------------------- nombres
     def ruta(self, nodo):
@@ -103,6 +105,8 @@ def instalar():
 
     def ls(*nombres, long=False, type=None, **_):
         res = []
+        if not nombres and type is not None:
+            nombres = ("*",)
         for nombre in (x for n in nombres for x in _lista(n)):
             patron = re.compile("^" + re.escape(nombre).replace(r"\*", ".*") + "$")
             nodos = ([n for n in e.nodos if patron.match(n.nombre)] if "*" in nombre
@@ -149,7 +153,8 @@ def instalar():
         nodo.attrs[atributo.split(".", 1)[1]] = valores
 
     def getAttr(atributo, **_):
-        return e.buscar(atributo).attrs.get(atributo.split(".", 1)[1])
+        valor = e.buscar(atributo).attrs.get(atributo.split(".", 1)[1])
+        return valor[0] if isinstance(valor, tuple) and len(valor) == 1 else valor
 
     def addAttr(nombre, longName=None, **_):
         e.buscar(nombre).attrs.setdefault(longName, None)
@@ -221,7 +226,24 @@ def instalar():
         return [-0.2, 0.0, -0.05, 0.2, 1.0, 0.05]
 
     def pluginInfo(nombre, query=False, loaded=False, **_):
-        return False
+        return e.arnold and nombre == "mtoa"
+
+    def isConnected(origen, destino):
+        o, d = e.buscar(origen), e.buscar(destino)
+        return any(c == (o, origen.split(".", 1)[1], d, destino.split(".", 1)[1])
+                   for c in e.conexiones)
+
+    def polyColorSet(nombre, query=False, currentColorSet=False, **_):
+        e.buscar(nombre)
+        return ["colorSet1"]
+
+    def optionVar(exists=None, query=None, stringValue=None, **_):
+        if exists is not None:
+            return exists in e.opciones
+        if query is not None:
+            return e.opciones.get(query, 0)
+        if stringValue is not None:
+            e.opciones[stringValue[0]] = stringValue[1]
 
     def colorManagementPrefs(query=False, cmEnabled=False, **_):
         return True
@@ -233,7 +255,7 @@ def instalar():
                     getAttr, addAttr, attributeQuery, select, delete, shadingNode, sets,
                     connectAttr, listConnections, particle, saveInitialState,
                     particleInstancer, duplicate, xform, exactWorldBoundingBox, pluginInfo,
-                    colorManagementPrefs, warning):
+                    colorManagementPrefs, warning, isConnected, polyColorSet, optionVar):
         setattr(cmds, funcion.__name__, funcion)
 
     om = types.ModuleType("maya.api.OpenMaya")
