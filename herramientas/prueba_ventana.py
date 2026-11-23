@@ -672,8 +672,9 @@ def _pasos():
         ("guardar_preajuste", lambda: guardar_preajuste(_v())),
         ("hoja_propia", lambda: hoja_propia(_v())),
         ("ruina", lambda: ruina(_v())),
-        ("recargar_plugin", recargar_plugin),
+        # Antes de recargar el plug-in: al descargarlo se cierra la ventana.
         ("ajustes_al_salir", _ajustes_al_salir),
+        ("recargar_plugin", recargar_plugin),
     ]
 
 
