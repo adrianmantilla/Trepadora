@@ -1,7 +1,7 @@
 """Exportar: hornear las hojas instanciadas, juntar mallas y el mapa de color.
 
 Lo que depende de Maya (leer la escena, FBX, Alembic) se prueba dentro de Maya
-con ``herramientas/prueba_exportar.py``.
+con el paso «exportar» de ``herramientas/prueba_ventana.py``.
 
 Ejecutar desde la raíz del repositorio:  python -m unittest discover tests
 """

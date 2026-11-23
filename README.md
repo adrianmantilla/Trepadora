@@ -2,10 +2,11 @@
 
 Plugin para generar plantas trepadoras en Autodesk Maya 2026 y 2027, pensado para estudiantes.
 
-> **Estado: fase 2 (texturas).** Ventana acoplable con los pasos en orden, preajustes e
-> instalador de un solo gesto. Genera tallos con grosor, rabillos y hojas (instancias de
-> unas pocas hojas modelo, o una sola malla) con materiales de Arnold y texturas de hoja y
-> de corteza en cuatro tamaños, de 512 a 4K.
+> **Estado: fase 2 (texturas y exportación).** Ventana acoplable con los pasos en orden,
+> preajustes e instalador de un solo gesto. Genera tallos con grosor, rabillos y hojas
+> (instancias de unas pocas hojas modelo, o una sola malla) con materiales de Arnold y
+> texturas de hoja y de corteza en cuatro tamaños, de 512 a 4K. Exporta la planta a FBX
+> (Unity, Unreal) y a Alembic, con sus texturas.
 
 Funciona igual en Windows y en macOS, con el Python que trae Maya: no hay que instalar
 nada más (no usa NumPy).
@@ -121,6 +122,27 @@ Las escenas guardan la ruta de las texturas. Si abres una escena hecha en otro o
 (en casa con macOS y en clase con Windows, por ejemplo), el plug-in apunta sus texturas a la
 carpeta de Trepadora de este ordenador, con la misma resolución, y lo dice en la línea de
 mensajes de Maya.
+
+**Exportar.** El botón **Exportar…** del pie de la ventana (o **Trepadora → Exportar planta
+seleccionada…**) guarda la planta seleccionada en un archivo para otros programas. Si no hay
+nada seleccionado, exporta la última planta creada, o la única que haya en la escena.
+
+- **FBX** (`.fbx`), para motores de juego como Unity o Unreal. Lleva los materiales.
+- **Alembic** (`.abc`), para otros programas de 3D. No guarda materiales: las texturas van
+  solo en la carpeta.
+
+El archivo tiene dos mallas limpias, con UV y suavizadas: **tallos** (tallos y rabillos) y
+**hojas** (todas las hojas en una malla; las instancias no se exportan bien). El color de
+cada hoja va en los colores de vértice (`colorSet1`). Al lado se crea la carpeta
+`<nombre>_texturas` con las texturas en la **Resolución de texturas** elegida y un mapa de
+color por juego (`hoja_hiedra_color.jpg`, `corteza_color.jpg`) que ya lleva el tono medio de
+la planta, para los programas que no multiplican la textura por los colores de vértice. Lleva
+esa carpeta siempre junto al archivo.
+
+La escena no cambia: la copia que se exporta se borra al terminar. La planta de la ruina, con
+unas 8.000 hojas, ocupa unos 33 MB en FBX y 74 MB en Alembic y tarda unos segundos. Las hojas
+pesan bastante para un juego; para aligerarlas, baja la **Densidad de hojas** antes de crear
+la malla.
 
 ## Uso desde el Script Editor (avanzado)
 
@@ -242,6 +264,7 @@ scripts/trepadora/
   escenas.py          escenas de prueba (sencilla y ruina) y sus ajustes
   prototipo.py        crea en Maya la vista previa, la planta y sus materiales
   texturas.py         texturas de hojas y tallos: resoluciones, rutas y cambio en la escena
+  exportar.py         exportar a FBX y Alembic: hornea las hojas en una malla y copia las texturas
   i18n/               textos por idioma (es.json); la interfaz se puede traducir
 texturas/             texturas JPEG en 512/, 1k/, 2k/ y 4k/: <juego>_<mapa>.jpg
 herramientas/
