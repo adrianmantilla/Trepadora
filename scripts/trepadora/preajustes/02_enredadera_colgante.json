@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "clave_nombre": "preajuste_enredadera_colgante",
+  "nombre": "Enredadera colgante",
+  "ajustes": {
+    "tipo_tallo": "verde",
+    "forma_hoja": "alargada",
+    "pasos": 260,
+    "densidad": 0.75,
+    "grosor": 1.0,
+    "semilla": 1,
+    "escala": 1.0,
+    "adherencia": 0.8,
+    "gravedad": 0.95,
+    "luz": 0.25,
+    "aleatoriedad": 0.55,
+    "prob_rama": 0.09,
+    "generaciones_max": 4,
+    "longitud_max": 260,
+    "brotes_basales": 3,
+    "prob_colgar": 0.7,
+    "tamano": 1.0,
+    "variacion": 0.5,
+    "caida": 0.7,
+    "despegue": 0.35,
+    "manchas": 0.6,
+    "bronce": 0.015,
+    "instancias": true,
+    "resolucion": "media"
+  }
+}

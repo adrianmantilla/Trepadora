@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "clave_nombre": "preajuste_musgo_trepador",
+  "nombre": "Musgo trepador",
+  "ajustes": {
+    "tipo_tallo": "verde",
+    "forma_hoja": "redonda",
+    "pasos": 200,
+    "densidad": 1.0,
+    "grosor": 0.6,
+    "semilla": 1,
+    "escala": 1.0,
+    "adherencia": 1.0,
+    "gravedad": 0.2,
+    "luz": 0.36,
+    "aleatoriedad": 0.9,
+    "prob_rama": 0.16,
+    "generaciones_max": 5,
+    "longitud_max": 220,
+    "brotes_basales": 5,
+    "prob_colgar": 0.1,
+    "tamano": 0.45,
+    "variacion": 0.5,
+    "caida": 0.15,
+    "despegue": 0.1,
+    "manchas": 0.2,
+    "bronce": 0.0,
+    "instancias": true,
+    "resolucion": "media"
+  }
+}

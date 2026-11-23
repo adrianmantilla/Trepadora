@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "clave_nombre": "preajuste_hiedra_fachada",
+  "nombre": "Hiedra de fachada",
+  "ajustes": {
+    "tipo_tallo": "lenoso",
+    "forma_hoja": "hiedra",
+    "pasos": 260,
+    "densidad": 0.82,
+    "grosor": 1.0,
+    "semilla": 1,
+    "escala": 1.0,
+    "adherencia": 0.8,
+    "gravedad": 0.5,
+    "luz": 0.36,
+    "aleatoriedad": 0.45,
+    "prob_rama": 0.09,
+    "generaciones_max": 4,
+    "longitud_max": 220,
+    "brotes_basales": 3,
+    "prob_colgar": 0.35,
+    "tamano": 1.0,
+    "variacion": 0.5,
+    "caida": 0.45,
+    "despegue": 0.35,
+    "manchas": 0.6,
+    "bronce": 0.015,
+    "instancias": true,
+    "resolucion": "media"
+  }
+}
