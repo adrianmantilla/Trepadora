@@ -40,7 +40,7 @@ class ParametrosHojas:
     # zonas más ralas, planas y claras entre ellas (0 = reparto uniforme).
     manchas: float = 0.6
     # Tamaño de esas matas, en largos de hoja.
-    escala_manchas: float = 13.0
+    escala_manchas: float = 11.0
     # Cuántas hojas tiran a bronce, como la hiedra en invierno (con 0.015,
     # alrededor de una de cada cien). Salen en rodales de hojas viejas, cerca
     # de la raíz.
@@ -120,11 +120,12 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                 densidad *= 1.0 - 0.65 * p.tronco_visible * (1.0 - lejos / 0.06)
             # Los tallos que cuelgan, aunque sean jóvenes, no se quedan en
             # hilos desnudos.
-            densidad *= 1.0 - 0.6 * p.degradado * lejos * lejos * (0.4 if colgante else 1.0)
+            densidad *= 1.0 - _K_DEG_DENSIDAD * p.degradado * lejos * lejos * (0.4 if colgante else 1.0)
             # Matas y claros: un ruido suave en el espacio hace que unas zonas
             # estén más tupidas que otras, como en una hiedra de verdad. Lo que
             # cuelga en el aire va siempre bien vestido.
-            mata = _suave(_ruido(punto, escala_manchas, p.semilla, _OCTAVAS_MATA))
+            mata = _suave(_ruido(_girar(punto), escala_manchas, p.semilla,
+                                 _OCTAVAS_MATA, _PERSISTENCIA_MATA))
             if colgante:
                 mata = max(mata, 0.5)
             densidad *= 1.0 - _K_DENSIDAD * p.manchas * (1.0 - mata)
@@ -155,9 +156,9 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             tamano = p.tamano * (0.3 + 0.7 * edad) * vigor * escala_gen
             # Más grandes cerca de la raíz y en las matas; sin llegar a hojitas
             # diminutas en los claros más alejados.
-            zona = 1.0 + p.degradado * (0.45 - lejos) * (0.4 if colgante else 1.0)
+            zona = 1.0 + _K_DEG_TAMANO * p.degradado * (0.45 - lejos) * (0.4 if colgante else 1.0)
             zona *= 1.0 + _K_TAMANO * p.manchas * (mata - 0.5)
-            tamano *= min(1.9, max(0.5, zona))
+            tamano *= min(1.9, max(_ZONA_MIN, zona))
             tamano *= 1.0 + p.variacion * (rng.random() * 2.0 - 1.0)
 
             # Dirección de la hoja: hacia un costado, un poco hacia delante,
@@ -199,7 +200,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # distancias del muro y la masa gana bulto y sombras. En los claros,
             # cortos, y las hojas quedan planas contra la piedra.
             largo = tamano * p.peciolo * rng.uniform(0.45, 1.5)
-            largo *= 0.6 if encima else max(0.4, 1.0 + 5.0 * p.manchas * (mata - 0.3))
+            largo *= 0.6 if encima else max(0.4, 1.0 + _K_RABILLO * p.manchas * (mata - 0.3))
             peciolo = v.escala(v.unitario(peciolo) or costado, largo)
             base = v.suma(punto, peciolo)
 
@@ -215,7 +216,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # Los claros son de un verde más claro y las matas, más oscuras;
             # por manchas, no hoja a hoja. Lo más alejado de la raíz aclara un
             # poco. Alguna hoja vieja tira a bronce.
-            claridad = (0.4 * (lejos - 0.4) + 2.4 * p.manchas * (0.5 - mata)
+            claridad = (_K_CLARO_LEJOS * (lejos - 0.4) + 2.4 * p.manchas * (0.5 - mata)
                         + rng.gauss(0.0, 0.1))
             tinte = 0.0
             bajo = (punto[1] - alto_min) / alto_total
@@ -258,12 +259,24 @@ def _choca_con_horizontal(superficie, punto, adelante, tamano, normal_sup):
     return cercano[1] < punto[1]
 
 
-_K_DENSIDAD = 0.8
-_K_TAMANO = 1.5
-# Las matas salen de un ruido de una sola octava: manchas grandes y limpias,
-# no salpicadas.
-_OCTAVAS_MATA = 1
-_ANCHO_MATA = 0.5
+# Cuánto cambian la densidad y el tamaño entre mata y claro. En los claros
+# quedan menos hojas, pero no diminutas (_ZONA_MIN): si no, los tallos se ven
+# como una red.
+_K_DENSIDAD = 1.2
+_K_TAMANO = 1.1
+_ZONA_MIN = 0.6
+# Las matas salen de un ruido con una segunda octava débil: manchas grandes de
+# borde irregular, sin salpicar. _ANCHO_MATA suaviza el paso de mata a claro.
+_OCTAVAS_MATA = 2
+_PERSISTENCIA_MATA = 0.3
+_ANCHO_MATA = 0.6
+# Degradado por distancia a la raíz, flojo: si pesa mucho, la planta se lee
+# como "tupida abajo, rala arriba" en vez de matas repartidas.
+_K_DEG_DENSIDAD = 0.35
+_K_DEG_TAMANO = 0.6
+_K_CLARO_LEJOS = 0.2
+# Rabillos más largos en las matas (bulto) que en los claros.
+_K_RABILLO = 3.0
 
 
 def _tumbar_en_remate(superficie, base, adelante, cara, normal_sup, tamano):
@@ -392,8 +405,8 @@ def _hash(i, j, k, semilla):
     return ((n ^ (n >> 16)) & 0xFFFFFF) / float(0xFFFFFF)
 
 
-def _ruido(punto, escala, semilla, octavas=2):
-    """Ruido de valor 3D suave, de 0 a 1, con dos octavas."""
+def _ruido(punto, escala, semilla, octavas=2, persistencia=0.5):
+    """Ruido de valor 3D suave, de 0 a 1, con varias octavas."""
     total, peso, amplitud = 0.0, 0.0, 1.0
     for octava in range(octavas):
         e = escala / (2.0 ** octava)
@@ -411,8 +424,19 @@ def _ruido(punto, escala, semilla, octavas=2):
                     valor += w * _hash(i + di, j + dj, k + dk, s)
         total += amplitud * valor
         peso += amplitud
-        amplitud *= 0.5
+        amplitud *= persistencia
     return total / peso
+
+
+def _girar(q):
+    """Gira el punto para que las matas no sigan la rejilla del ruido.
+
+    Sin girar, los bordes de las manchas salen paralelos a los ejes: en una
+    columna, una línea horizontal que corta la mata de golpe.
+    """
+    return (0.8572 * q[0] - 0.5150 * q[1],
+            0.3767 * q[0] + 0.6269 * q[1] - 0.6820 * q[2],
+            0.3513 * q[0] + 0.5846 * q[1] + 0.7314 * q[2])
 
 
 def _suave(n):
