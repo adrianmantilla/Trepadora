@@ -2,11 +2,13 @@
 
 Plugin para generar plantas trepadoras en Autodesk Maya 2026 y 2027, pensado para estudiantes.
 
-> **Estado: fase 2 (texturas y exportación).** Ventana acoplable con los pasos en orden,
-> preajustes e instalador de un solo gesto. Genera tallos con grosor, rabillos y hojas
-> (instancias de unas pocas hojas modelo, o una sola malla) con materiales de Arnold y
-> texturas de hoja y de corteza en cuatro tamaños, de 512 a 4K. Exporta la planta a FBX
-> (Unity, Unreal) y a Alembic, con sus texturas.
+> **Estado: v2.** Ventana acoplable con los pasos en orden, preajustes e instalador de un
+> solo gesto. Genera tallos con grosor, raíces adhesivas, rabillos y hojas (instancias de
+> unas pocas hojas modelo, o una sola malla) con materiales de Arnold y texturas de hoja y
+> de corteza en cuatro tamaños, de 512 a 4K. La planta esquiva las zonas prohibidas
+> (ventanas, puertas), puede seguir una curva guía y sus ramas se recortan con un clic.
+> Exporta a FBX (Unity, Unreal) y a Alembic, con sus texturas, y con hojas ligeras para
+> juegos. Interfaz en español y en inglés.
 
 Funciona igual en Windows y en macOS, con el Python que trae Maya: no hay que instalar
 nada más (no usa NumPy).
@@ -54,14 +56,29 @@ acoplar a un lado de Maya y recuerda dónde la dejaste. Los pasos se activan en 
 1. **Superficie.** Selecciona las mallas por las que trepa la planta (un muro, el suelo,
    una columna; también vale un grupo) y pulsa **Usar selección**. Si entre lo seleccionado
    hay localizadores, se usan como puntos de nacimiento.
+   **Zonas prohibidas** (opcional): pon una caja delante de una ventana o una puerta,
+   selecciónala y pulsa **Usar selección** en esa fila. La planta la rodea y no crece por
+   dentro (ni sus hojas). Valen varias cajas a la vez, giradas o escaladas, y cualquier
+   malla (se usa su caja). Después puedes ocultarlas con **H**: la planta las sigue
+   esquivando.
 2. **Origen** (opcional). Pulsa **Clic en el visor** y haz clic sobre la superficie donde
    nace cada planta; **Quitar** los borra. Sin orígenes, la planta nace en el centro de la
    base de la superficie.
+   **Curva guía** (opcional): dibuja una curva sobre la pared o cerca de ella
+   (*Create → Curve Tools → EP Curve Tool*), selecciónala y pulsa **Usar selección** en esa
+   fila. La planta crece a lo largo de ella, del primer punto que dibujaste al último (para
+   darle la vuelta: *Curves → Reverse Direction*). Al llegar al final sigue creciendo a su
+   aire. Si no hay orígenes, nace una planta al principio de cada curva. Cuánto la sigue lo
+   dice **Seguir la guía**, en los ajustes avanzados de crecimiento.
 3. **Aspecto.** Tipo de tallo, forma de hoja, Tamaño, Densidad de hojas, Grosor del tallo y
    Resolución de texturas (ver **Texturas** más abajo).
    Pulsa **Crecer** para ver la forma como líneas (es rápido). Cambia ajustes y vuelve a
    pulsar Crecer hasta que te guste; **Crecer más** la hace más grande sin empezar de cero
    y **Reiniciar** borra las líneas.
+   **Recortar ramas:** activa el botón y haz clic sobre una línea de la vista previa, justo
+   donde quieres cortar: la rama se corta por ahí, con todo lo que brota más allá. **Ctrl+Z**
+   la devuelve. Pulsa **Q** o el mismo botón para terminar. Crear malla usa la planta
+   recortada; si vuelves a pulsar Crecer, crece de nuevo sin recortes.
 4. **Crear malla.** Crea los tallos con grosor, las hojas y los materiales, y deja la
    planta seleccionada. Todo se deshace con un solo **Ctrl+Z**; **Esc** detiene el
    crecimiento y se conserva lo crecido.
@@ -75,8 +92,10 @@ hace más grande. La ventana lo dice al crecer. Si pararon por su largo, **Crece
 alarga; si llenó el espacio, añade otra malla en el paso 1 o pon un origen en una zona libre.
 
 **Ajustes avanzados** (plegados): crecimiento (semilla, escala, adherencia, gravedad, luz,
-ramificación…), hojas (tamaño, caída, manchas, bronce, instancias y **hoja propia**: una
-malla tuya que se usa como hoja) y la resolución de los tallos. Cada ajuste explica qué hace
+ramificación, **Seguir la guía**…), hojas (tamaño, caída, manchas, bronce, instancias y
+**hoja propia**: una malla tuya que se usa como hoja) y tallos (resolución y **Raíces
+adhesivas**: raicillas que agarran el tallo a la pared, como las de la hiedra; solo salen
+donde el tallo va pegado a una superficie, y con 0 no sale ninguna). Cada ajuste explica qué hace
 al dejar el ratón encima.
 
 **Preajustes.** El desplegable de arriba trae cinco: Hiedra de fachada, Enredadera colgante,
@@ -85,7 +104,8 @@ importarlos y exportarlos como archivos `.json` (para repartirlos a la clase), b
 tuyos y volver a los valores por defecto. Los tuyos se guardan en la carpeta de preferencias
 de Maya, en `trepadora/preajustes`.
 
-**La escena recuerda.** La superficie, los orígenes, la hoja propia y los ajustes se guardan
+**La escena recuerda.** La superficie, las zonas prohibidas, los orígenes, la curva guía, la
+hoja propia y los ajustes se guardan
 en la escena (grupo `trepadora_origenes_grp`): al abrirla otro día la ventana sigue donde
 estaba. Cada planta creada guarda además los ajustes y la semilla con que se hizo: selecciónala
 y usa **… → Copiar los ajustes de la planta seleccionada** para repetirla o revisar cómo se hizo.
@@ -140,9 +160,25 @@ la planta, para los programas que no multiplican la textura por los colores de v
 esa carpeta siempre junto al archivo.
 
 La escena no cambia: la copia que se exporta se borra al terminar. La planta de la ruina, con
-unas 8.000 hojas, ocupa unos 33 MB en FBX y 74 MB en Alembic y tarda unos segundos. Las hojas
-pesan bastante para un juego; para aligerarlas, baja la **Densidad de hojas** antes de crear
-la malla.
+unas 8.000 hojas, ocupa unos 33 MB en FBX y 74 MB en Alembic y tarda unos segundos.
+
+**Hojas ligeras para juegos.** La flecha del botón **Exportar…** (o **Trepadora → Exportar
+para juegos (hojas ligeras)…**) exporta cada hoja como una tarjeta de seis vértices, doblada
+por el nervio, en vez de la hoja completa: pesa unas doce veces menos. La silueta de la hoja
+la pone la transparencia del mapa de color, que en este caso es un PNG
+(`hoja_hiedra_color.png`). En el motor hay que decirle al material de las hojas que use esa
+transparencia:
+
+- **Unity:** activa **Alpha Clipping** en el material de las hojas.
+- **Unreal:** pon el **Blend Mode** del material de las hojas en **Masked**.
+
+Las hojas propias no se pueden aligerar (su silueta no está en la textura): se exportan
+completas y la ventana lo avisa. Para aligerar aún más, baja la **Densidad de hojas** antes
+de crear la malla.
+
+**Idioma.** La interfaz está en español y en inglés. Se cambia en **Trepadora → Idioma /
+Language**, sin reiniciar Maya: si la ventana está abierta, se vuelve a abrir en el idioma
+elegido sin perder lo que tenías, y el idioma se recuerda para la próxima vez.
 
 ## Uso desde el Script Editor (avanzado)
 
@@ -260,12 +296,15 @@ scripts/trepadora/
   geometria.py        mallas de tallos, hojas y rabillos en Python puro; tipos de tallo y hoja
   instancias.py       hojas modelo y colocación de cada hoja para el instanciador
   vectores.py         operaciones con vectores
-  superficie_maya.py  consultas de punto más cercano sobre mallas de Maya
+  superficie_maya.py  consultas de punto más cercano sobre mallas de Maya; zonas y curvas guía
+  zonas.py            zonas prohibidas: cajas orientadas que la planta rodea (no depende de Maya)
+  guias.py            curvas guía: el tirón que siguen las ramas (no depende de Maya)
   escenas.py          escenas de prueba (sencilla y ruina) y sus ajustes
   prototipo.py        crea en Maya la vista previa, la planta y sus materiales
   texturas.py         texturas de hojas y tallos: resoluciones, rutas y cambio en la escena
-  exportar.py         exportar a FBX y Alembic: hornea las hojas en una malla y copia las texturas
-  i18n/               textos por idioma (es.json); la interfaz se puede traducir
+  exportar.py         exportar a FBX y Alembic: hornea las hojas en una malla (o en tarjetas
+                      ligeras) y copia las texturas
+  i18n/               textos por idioma (es.json, en.json); la interfaz se puede traducir
 texturas/             texturas JPEG en 512/, 1k/, 2k/ y 4k/: <juego>_<mapa>.jpg
 herramientas/
   texturas/generar_texturas.py  dibuja las texturas de las hojas (NumPy y Pillow, sin Maya)
@@ -301,8 +340,8 @@ Los relieves son mapas de normales de tipo OpenGL.
 
 ## Traducir la interfaz
 
-Todos los textos están en `scripts/trepadora/i18n/es.json`. Para otro idioma, copia el
-archivo con el código del idioma (por ejemplo `en.json`), traduce los valores sin tocar las
-claves ni lo que va entre llaves, y en Maya ejecuta
-`cmds.optionVar(stringValue=("trepadoraIdioma", "en"))` y reinicia Maya. Lo que falte por
-traducir sale en español.
+Todos los textos están en `scripts/trepadora/i18n/es.json` (y su traducción al inglés en
+`en.json`). Para otro idioma, copia el archivo con el código del idioma (por ejemplo
+`fr.json`), traduce los valores sin tocar las claves ni lo que va entre llaves. El idioma nuevo aparece solo en **Trepadora → Idioma /
+Language** (con su código; para que salga su nombre, añádelo a `NOMBRES_IDIOMA` en
+`scripts/trepadora/menu.py`). Lo que falte por traducir sale en español.
