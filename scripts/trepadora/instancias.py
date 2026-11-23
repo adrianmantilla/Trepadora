@@ -10,9 +10,10 @@ Los modelos combinan:
 * la forma: varios grados de lobulado (en la hiedra) y unas pocas variantes de
   curva, pliegue y torsión;
 * el color: los colores de todas las hojas se agrupan en unos pocos tonos
-  (verde oscuro, claro, amarillento, bronce...). El visor enseña el tono del
-  grupo; para el render, cada hoja lleva además la proporción entre su color y
-  el de su grupo, y Arnold multiplica una cosa por la otra.
+  (verde oscuro, claro, amarillento...), más uno propio para las hojas de un
+  color muy distinto, como las bronce. El visor enseña el tono del grupo;
+  para el render, cada hoja lleva además la proporción entre su color y el de
+  su grupo, y Arnold multiplica una cosa por la otra.
 """
 
 import math
@@ -86,10 +87,15 @@ def ejes_hoja(hoja):
     return x, v.cruz(z, x), z
 
 
-def agrupar_colores(colores: List[Vector], grupos: int, vueltas: int = 10):
+def agrupar_colores(colores: List[Vector], grupos: int, vueltas: int = 10, aparte: int = 1,
+                    umbral: float = 0.01):
     """Reparte los colores en ``grupos`` tonos (k-medias, sin azar).
 
-    Devuelve el grupo de cada color y el color medio de cada grupo; los
+    Los tonos salen ordenados de oscuro a claro. Después, hasta ``aparte``
+    veces, el color que más se aleja de todos los tonos (más de ``umbral``,
+    en distancia al cuadrado) abre un tono propio: así unas pocas hojas de
+    otro color, como las bronce entre las verdes, no se pierden dentro de un
+    verde. Devuelve el grupo de cada color y el color medio de cada grupo; los
     grupos vacíos se quitan.
     """
     if not colores:
@@ -97,6 +103,18 @@ def agrupar_colores(colores: List[Vector], grupos: int, vueltas: int = 10):
     orden = sorted(range(len(colores)), key=lambda i: _luz(colores[i]))
     grupos = max(1, min(grupos, len(colores)))
     centros = [colores[orden[(2 * k + 1) * len(orden) // (2 * grupos)]] for k in range(grupos)]
+    asignado, centros = _k_medias(colores, centros, vueltas)
+    for _ in range(aparte):
+        lejos = max(colores, key=lambda c: min(_distancia2(c, k) for k in centros))
+        if min(_distancia2(lejos, k) for k in centros) <= umbral:
+            break
+        asignado, centros = _k_medias(colores, centros + [lejos], vueltas)
+    usados = sorted(set(asignado))
+    nuevo = {k: n for n, k in enumerate(usados)}
+    return [nuevo[k] for k in asignado], [centros[k] for k in usados]
+
+
+def _k_medias(colores, centros, vueltas):
     asignado = [0] * len(colores)
     for _ in range(vueltas):
         for i, c in enumerate(colores):
@@ -110,9 +128,7 @@ def agrupar_colores(colores: List[Vector], grupos: int, vueltas: int = 10):
             s[3] += 1
         centros = [(s[0] / s[3], s[1] / s[3], s[2] / s[3]) if s[3] else centros[k]
                    for k, s in enumerate(sumas)]
-    usados = sorted(set(asignado))
-    nuevo = {k: n for n, k in enumerate(usados)}
-    return [nuevo[k] for k in asignado], [centros[k] for k in usados]
+    return asignado, centros
 
 
 def hojas_instanciadas(hojas, forma: str = "hiedra", semilla: int = 1,

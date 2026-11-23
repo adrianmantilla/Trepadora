@@ -60,7 +60,8 @@ class PruebasHojasInstanciadas(unittest.TestCase):
         self.assertEqual(len(d), len(self.hojas))
         for lista in (d.giros, d.escalas, d.indices, d.colores):
             self.assertEqual(len(lista), len(self.hojas))
-        self.assertLessEqual(len(d.modelos), 6 * 4 * 2)
+        # Seis tonos más uno aparte, cuatro lobulados y dos variantes de forma.
+        self.assertLessEqual(len(d.modelos), 7 * 4 * 2)
         self.assertTrue(all(0 <= i < len(d.modelos) for i in d.indices))
         # Se usan modelos de varias formas y tonos, no siempre el mismo.
         self.assertGreater(len(set(d.indices)), 10)
@@ -111,6 +112,32 @@ class PruebasHojasInstanciadas(unittest.TestCase):
             d = instancias.hojas_instanciadas(self.hojas[:200], forma=forma, semilla=1)
             self.assertEqual(len(d), 200)
             self.assertTrue(all(m.lobulado == 1.0 for m in d.modelos))
+
+
+class PruebasTonos(unittest.TestCase):
+    """Los colores de las hojas se agrupan en pocos tonos."""
+
+    VERDES = [(0.1 + 0.02 * k, 0.2 + 0.015 * k, 0.1 + 0.01 * k) for k in range(12)] * 20
+
+    def test_verdes_de_oscuro_a_claro(self):
+        grupos, centros = instancias.agrupar_colores(self.VERDES, 6)
+        self.assertEqual(len(centros), 6)
+        self.assertEqual(len(grupos), len(self.VERDES))
+        luces = [instancias._luz(c) for c in centros]
+        self.assertEqual(luces, sorted(luces))
+
+    def test_unas_pocas_bronce_tienen_su_tono(self):
+        bronce = [(0.24, 0.13 + 0.004 * k, 0.09) for k in range(5)]
+        colores = self.VERDES + bronce
+        grupos, centros = instancias.agrupar_colores(colores, 6)
+        self.assertEqual(len(centros), 7)
+        propios = {grupos[i] for i in range(len(self.VERDES), len(colores))}
+        self.assertEqual(len(propios), 1)
+        tono = centros[propios.pop()]
+        self.assertGreater(tono[0], tono[1])  # rojizo, no verde
+        self.assertEqual(sum(1 for g in grupos if centros[g] == tono), len(bronce))
+        # Sin azar: siempre lo mismo.
+        self.assertEqual(instancias.agrupar_colores(colores, 6), (grupos, centros))
 
 
 class PruebasTiposDeTallo(unittest.TestCase):

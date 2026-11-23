@@ -121,6 +121,13 @@ def _aristas_duras(cmds, nodo):
     return [sum(1 for i in range(fn.numEdges) if not fn.isEdgeSmooth(i)), fn.numEdges]
 
 
+def _caja_de_matrices(matrices):
+    """Caja de las posiciones de las instancias (la del instanciador sale vacía en mayapy)."""
+    if not matrices:
+        return None
+    return [round(f(m[12 + j] for m in matrices), 2) for f in (min, max) for j in range(3)]
+
+
 def _seguro(funcion, *args):
     """El resultado, o el error como texto: una medida que falla no para la prueba."""
     try:
@@ -179,7 +186,7 @@ def probar(carpeta):
     informe["instancias"] = dict(particulas=particulas, instancias=len(matrices),
                                  modelos=len(objetos),
                                  error_colocacion=_error_de_colocacion(cmds, matrices),
-                                 caja=_caja(cmds, cmds.ls(type="instancer")[0]),
+                                 caja=_caja_de_matrices(matrices),
                                  tonos_visor=_seguro(_tonos_visor, cmds, objetos),
                                  aristas_duras_modelo=_seguro(_aristas_duras, cmds, objetos[0]),
                                  aristas_duras_tallos=_seguro(_aristas_duras, cmds,
