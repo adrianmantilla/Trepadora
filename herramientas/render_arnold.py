@@ -35,7 +35,7 @@ ANCHO, ALTO = 1280, 720
 CIELO = dict(color=(0.75, 0.85, 1.0), intensidad=1.3)
 # Bruma del horizonte: un gris azulado pálido. El cielo la tiene justo en el
 # horizonte y por debajo, y el suelo se funde con ella a lo lejos (LEJANIA).
-BRUMA = (0.74, 0.79, 0.86)
+BRUMA = (0.66, 0.74, 0.86)
 # Degradado del cielo (posición de abajo a arriba, color lineal; 0.5 es el
 # horizonte). Las vistas miran casi en horizontal y solo ven unos grados de
 # cielo: el azul tiene que empezar muy cerca del horizonte o el cielo sale
@@ -43,11 +43,15 @@ BRUMA = (0.74, 0.79, 0.86)
 DEGRADADO = ((0.0, BRUMA), (0.5, BRUMA), (0.515, (0.60, 0.70, 0.88)),
              (0.56, (0.42, 0.58, 0.90)), (0.7, (0.30, 0.48, 0.88)), (1.0, (0.22, 0.40, 0.84)))
 AMPLIAR_SUELO = 25.0
-# Cuánta bruma lleva el suelo según la distancia, como (posición, bruma) en
-# la rampa circular que va del centro del suelo (0) hacia fuera. Sin esto el
-# suelo acaba en una línea dura contra el cielo y parece un plano infinito.
-# Empieza suave y cerca: desde una cámara baja la franja lejana se ve fina.
-LEJANIA = ((0.1, 0.0), (0.3, 0.3), (0.65, 1.0))
+# Cuánta bruma lleva el suelo según la distancia al centro de la ruina, como
+# (distancia en unidades de la escena, bruma). Sin esto el suelo acaba en una
+# línea dura contra el cielo y parece un plano infinito. Empieza cerca porque
+# desde una cámara baja todo lo que queda más allá de unas 2000 unidades se
+# aprieta en una franja de pocos píxeles bajo el horizonte.
+LEJANIA = ((250, 0.0), (900, 0.15), (1800, 0.45), (3500, 0.8), (8000, 1.0))
+# Media anchura del suelo ya agrandado (700 × AMPLIAR_SUELO / 2): ahí está la
+# posición 1 de la rampa circular.
+RADIO_SUELO = 350.0 * AMPLIAR_SUELO
 SOL = dict(color=(1.0, 0.92, 0.8), intensidad=2.5, giro=(-50, -35, 0), angulo=2.0)
 # Vistas propias del render. «contraluz» mira la ventana con el sol bajo detrás
 # del muro: se ve la luz que atraviesa las hojas que cuelgan en el hueco.
@@ -164,9 +168,10 @@ def _lejania(cmds, shader):
     """
     try:
         lugar = cmds.shadingNode("place2dTexture", asUtility=True, name=shader + "_lugar")
-        cerca = [(0.0, (1.0, 1.0, 1.0))] + [(pos, (1.0 - k,) * 3) for pos, k in LEJANIA]
+        tramos = [(min(1.0, d / RADIO_SUELO), k) for d, k in LEJANIA]
+        cerca = [(0.0, (1.0, 1.0, 1.0))] + [(pos, (1.0 - k,) * 3) for pos, k in tramos]
         lejos = [(0.0, (0.0, 0.0, 0.0))] + [(pos, tuple(k * c for c in BRUMA))
-                                            for pos, k in LEJANIA]
+                                            for pos, k in tramos]
         # Tipo 4: rampa circular, por anillos desde el centro del suelo.
         mascara = _rampa(cmds, shader + "_cerca", cerca, 4, lugar)
         velo = _rampa(cmds, shader + "_lejos", lejos, 4, lugar)
@@ -199,9 +204,12 @@ def _luces(cmds):
     cmds.shadingNode("aiSkyDomeLight", asLight=True, name="render_cielo")
     forma_cielo = cmds.ls(type="aiSkyDomeLight")[0]
     cmds.setAttr(forma_cielo + ".color", *CIELO["color"], type="double3")
-    if cmds.attributeQuery("aiCamera", node=forma_cielo, exists=True):
+    # En MtoA 5.6 el atributo se llama «camera»; se mira también «aiCamera».
+    camara = [a for a in ("camera", "aiCamera")
+              if cmds.attributeQuery(a, node=forma_cielo, exists=True)]
+    if camara:
         cmds.setAttr(forma_cielo + ".intensity", CIELO["intensidad"])
-        cmds.setAttr(forma_cielo + ".aiCamera", 1.0 / CIELO["intensidad"])
+        cmds.setAttr(forma_cielo + "." + camara[0], 1.0 / CIELO["intensidad"])
     else:
         # Sin esa visibilidad, más luz aclararía también el cielo de fondo
         # y dejaría de casar con la bruma del suelo.
