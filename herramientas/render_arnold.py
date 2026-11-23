@@ -30,14 +30,20 @@ ANCHO, ALTO = 1280, 720
 # Cielo azulado y sol cálido, desde la misma dirección que la luz de las
 # capturas del visor.
 CIELO = dict(color=(0.75, 0.85, 1.0), intensidad=1.0)
-# Degradado del cielo (posición de abajo a arriba, color lineal): bruma clara
-# y cálida en el horizonte y azul más hondo arriba. Bajo el horizonte, la misma
-# bruma algo más apagada: el suelo se agranda hasta el horizonte (AMPLIAR_SUELO)
-# y lo que asoma por debajo, lejos, se lee como neblina y no como un muro.
-# Si no se puede montar, queda el color liso de CIELO.
-DEGRADADO = ((0.0, (0.62, 0.64, 0.66)), (0.5, (1.0, 0.96, 0.88)),
-             (0.6, (0.78, 0.86, 1.0)), (1.0, (0.38, 0.56, 0.95)))
+# Bruma del horizonte: un gris azulado pálido. El cielo la tiene justo en el
+# horizonte y por debajo, y el suelo se funde con ella a lo lejos (LEJANIA).
+BRUMA = (0.74, 0.79, 0.86)
+# Degradado del cielo (posición de abajo a arriba, color lineal; 0.5 es el
+# horizonte). Las vistas miran casi en horizontal y solo ven unos grados de
+# cielo: el azul tiene que empezar muy cerca del horizonte o el cielo sale
+# blanco. Si no se puede montar, queda el color liso de CIELO.
+DEGRADADO = ((0.0, BRUMA), (0.5, BRUMA), (0.515, (0.60, 0.70, 0.88)),
+             (0.56, (0.42, 0.58, 0.90)), (0.7, (0.30, 0.48, 0.88)), (1.0, (0.22, 0.40, 0.84)))
 AMPLIAR_SUELO = 25.0
+# Dónde empieza y dónde termina de fundirse el suelo con la bruma, en la
+# rampa circular que va del centro del suelo (0) hacia fuera. Sin esto el
+# suelo acaba en una línea dura contra el cielo y parece un plano infinito.
+LEJANIA = (0.2, 0.65)
 SOL = dict(color=(1.0, 0.92, 0.8), intensidad=2.5, giro=(-50, -35, 0), angulo=2.0)
 # Vistas propias del render. «contraluz» mira la ventana con el sol bajo detrás
 # del muro: se ve la luz que atraviesa las hojas que cuelgan en el hueco.
@@ -128,17 +134,58 @@ def _desgaste(cmds, nombre, shader, color, desgaste):
         print("render_arnold: piedra sin desgaste ({})".format(error))
 
 
+def _rampa(cmds, nombre, entradas, tipo, lugar=None):
+    """Rampa de Maya con estas (posición, color); quita las que trae de serie."""
+    rampa = cmds.shadingNode("ramp", asTexture=True, name=nombre)
+    cmds.setAttr(rampa + ".type", tipo)
+    if lugar:
+        cmds.connectAttr(lugar + ".outUV", rampa + ".uvCoord", force=True)
+        cmds.connectAttr(lugar + ".outUvFilterSize", rampa + ".uvFilterSize", force=True)
+    for i in cmds.getAttr(rampa + ".colorEntryList", multiIndices=True) or []:
+        cmds.removeMultiInstance("{}.colorEntryList[{}]".format(rampa, i), b=True)
+    for i, (posicion, color) in enumerate(entradas):
+        entrada = "{}.colorEntryList[{}]".format(rampa, i)
+        cmds.setAttr(entrada + ".position", posicion)
+        cmds.setAttr(entrada + ".color", *color, type="double3")
+    return rampa
+
+
+def _lejania(cmds, shader):
+    """A lo lejos, el suelo deja de recibir luz y brilla con el color de la bruma.
+
+    Con la bruma como emisión, y no como color, el suelo lejano sale igual que
+    el cielo en el horizonte, haya sol o sombra, y no queda línea entre los dos.
+    """
+    try:
+        cerca, lejos = LEJANIA
+        lugar = cmds.shadingNode("place2dTexture", asUtility=True, name=shader + "_lugar")
+        blanco, negro = (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)
+        bruma = tuple(c * CIELO["intensidad"] for c in BRUMA)
+        # Tipo 4: rampa circular, por anillos desde el centro del suelo.
+        mascara = _rampa(cmds, shader + "_cerca", ((0.0, blanco), (cerca, blanco), (lejos, negro)),
+                         4, lugar)
+        velo = _rampa(cmds, shader + "_lejos", ((0.0, negro), (cerca, negro), (lejos, bruma)),
+                      4, lugar)
+        apagado = cmds.shadingNode("aiMultiply", asUtility=True, name=shader + "_apagado")
+        fuente = cmds.listConnections(shader + ".baseColor", source=True, destination=False,
+                                      plugs=True)
+        if fuente:
+            cmds.connectAttr(fuente[0], apagado + ".input1", force=True)
+        else:
+            cmds.setAttr(apagado + ".input1", *cmds.getAttr(shader + ".baseColor")[0],
+                         type="double3")
+        cmds.connectAttr(mascara + ".outColor", apagado + ".input2", force=True)
+        cmds.connectAttr(apagado + ".outColor", shader + ".baseColor", force=True)
+        cmds.setAttr(shader + ".emission", 1.0)
+        cmds.connectAttr(velo + ".outColor", shader + ".emissionColor", force=True)
+    except RuntimeError as error:
+        print("render_arnold: suelo sin bruma ({})".format(error))
+
+
 def _degradado_cielo(cmds, forma_cielo):
     """Pone en el cielo el DEGRADADO de abajo a arriba, con una rampa de Maya."""
     try:
-        rampa = cmds.shadingNode("ramp", asTexture=True, name="render_cielo_degradado")
-        cmds.setAttr(rampa + ".type", 0)  # en V: de abajo a arriba
-        for i in cmds.getAttr(rampa + ".colorEntryList", multiIndices=True) or []:
-            cmds.removeMultiInstance("{}.colorEntryList[{}]".format(rampa, i), b=True)
-        for i, (posicion, color) in enumerate(DEGRADADO):
-            entrada = "{}.colorEntryList[{}]".format(rampa, i)
-            cmds.setAttr(entrada + ".position", posicion)
-            cmds.setAttr(entrada + ".color", *color, type="double3")
+        rampa = _rampa(cmds, "render_cielo_degradado", DEGRADADO, 0)  # en V: de abajo a arriba
         cmds.connectAttr(rampa + ".outColor", forma_cielo + ".color", force=True)
     except RuntimeError as error:
         print("render_arnold: cielo sin degradado ({})".format(error))
@@ -193,6 +240,7 @@ def preparar(cmds, semilla=1):
     segundos = time.time() - inicio
     piedra = _material_piedra(cmds, "render_piedra", PIEDRA)
     suelo = _material_piedra(cmds, "render_suelo", SUELO, 0.95, DESGASTE_SUELO)
+    _lejania(cmds, "render_suelo")
     for nodo in cmds.ls("prueba_*", type="transform"):
         if cmds.listRelatives(nodo, shapes=True, type="mesh"):
             cmds.sets(nodo, edit=True, forceElement=suelo if nodo == "prueba_suelo" else piedra)

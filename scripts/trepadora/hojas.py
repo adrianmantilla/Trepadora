@@ -231,13 +231,14 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
             # Las hojas de las puntas y de las ramas colgantes son más enteras.
             lobulado = min(1.0, max(0.0, rng.gauss(0.95, 0.15) - (0.35 if colgante else 0.0)))
             # Los claros son de un verde más claro y las matas, más oscuras;
-            # por manchas, no hoja a hoja. Lo más alejado de la raíz aclara un
+            # sobre todo por manchas, y hoja a hoja algo menos (si no, la masa
+            # sale de un verde uniforme). Lo más alejado de la raíz aclara un
             # poco. Alguna hoja vieja tira a bronce.
             # Lo que cuelga queda a la sombra de dintel o saliente: un poco
             # más claro, para que no salga casi negro.
             claridad = (_K_CLARO_LEJOS * (lejos - 0.4)
                         + (_CLARO_COLGANTE if colgante else _K_CLARO_MATA * p.manchas * (0.5 - mata))
-                        + rng.gauss(0.0, 0.1))
+                        + rng.gauss(0.0, 0.15))
             if not colgante and not encima:
                 # En una mata, las hojas de fuera reciben la luz y las de dentro
                 # quedan a la sombra de las demás. Las de fuera, más claras: la
@@ -259,7 +260,7 @@ def colocar_hojas(crecimiento, parametros: ParametrosHojas = None, superficie=No
                         bronces.setdefault(celda, []).append(base)
             hojas.append(Hoja(base=base, tallo=punto, adelante=adelante, normal=cara,
                               tamano=tamano, edad=edad, lobulado=lobulado,
-                              tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.14))),
+                              tono=min(0.999, max(0.0, tono_rama + rng.gauss(0.0, 0.2))),
                               claridad=max(-1.0, min(1.0, claridad)), tinte=tinte))
     return hojas
 
