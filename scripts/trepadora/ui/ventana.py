@@ -31,7 +31,9 @@ except ImportError:  # fuera de Maya, para las pruebas
         def show(self, *args, **kwargs):
             QtWidgets.QWidget.show(self)
 
+from .. import __version__
 from .. import ajustes as aj
+from .. import estilo
 from .. import texturas
 from ..ajustes import Aviso
 from ..i18n import t
@@ -39,15 +41,6 @@ from ..i18n import t
 NOMBRE = "trepadoraVentana"
 CONTROL = NOMBRE + "WorkspaceControl"
 _COLOR_CARGA = {"baja": "#7cc576", "media": "#e3a948", "alta": "#e8675a"}
-_COLOR_AVISO = "#e3a948"
-_COLOR_BIEN = "#9fd39a"
-_ESTILO = """
-QPushButton#principal { font-weight: bold; padding: 6px; background-color: #4b7a45; }
-QPushButton#principal:disabled { background-color: #3a3a3a; }
-QPushButton#principal:hover { background-color: #5a8f53; }
-QGroupBox { font-weight: bold; margin-top: 8px; }
-QGroupBox::title { subcontrol-origin: margin; left: 6px; padding: 0 3px; }
-"""
 
 
 def _numero(n):
@@ -227,9 +220,8 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
 
             sesion = Sesion()
         self.sesion = sesion
-        self.setObjectName(NOMBRE)
+        estilo.aplicar(self, NOMBRE)  # la línea de Materials, compartida con MantiTools
         self.setWindowTitle(t("ventana_titulo"))
-        self.setStyleSheet(_ESTILO)
         self.setMinimumWidth(320)
         self.resize(380, 820)
         self.controles = {}
@@ -245,6 +237,8 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def _construir(self):
         exterior = QtWidgets.QVBoxLayout(self)
         exterior.setContentsMargins(0, 0, 0, 0)
+        exterior.setSpacing(0)
+        exterior.addWidget(self._cabecera())
         desplazable = QtWidgets.QScrollArea()
         desplazable.setWidgetResizable(True)
         desplazable.setFrameShape(QtWidgets.QFrame.NoFrame)
@@ -255,7 +249,6 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         caja.setContentsMargins(8, 8, 8, 8)
         caja.setSpacing(8)
 
-        caja.addLayout(self._cabecera())
         caja.addWidget(self._paso_superficie())
         caja.addWidget(self._paso_origen())
         caja.addWidget(self._paso_aspecto())
@@ -269,12 +262,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         caja.addStretch(1)
 
     def _cabecera(self):
-        fila = QtWidgets.QHBoxLayout()
-        titulo = QtWidgets.QLabel(t("ventana_titulo"))
-        letra = titulo.font()
-        letra.setPointSizeF(letra.pointSizeF() * 1.3)
-        letra.setBold(True)
-        titulo.setFont(letra)
+        marco, fila = estilo.cabecera(t("ventana_titulo"), estilo.COLORES["trepadora"], __version__)
         self.combo_preajustes = QtWidgets.QComboBox()
         self.combo_preajustes.setToolTip(t("ayuda_preajustes"))
         self.combo_preajustes.activated.connect(self._elegir_preajuste)
@@ -293,11 +281,10 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         menu.addAction(t("preajuste_por_defecto"), self._por_defecto)
         menu.aboutToShow.connect(self._menu_preajustes)
         self.mas_preajustes.setMenu(menu)
-        fila.addWidget(titulo)
-        fila.addStretch(1)
-        fila.addWidget(self.combo_preajustes, 2)
-        fila.addWidget(self.mas_preajustes)
-        return fila
+        # Los preajustes, entre el título y la versión.
+        fila.insertWidget(fila.count() - 1, self.combo_preajustes, 2)
+        fila.insertWidget(fila.count() - 1, self.mas_preajustes)
+        return marco
 
     def _paso_superficie(self):
         caja = QtWidgets.QGroupBox(t("paso_superficie"))
@@ -338,6 +325,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
         usar.clicked.connect(al_usar)
         quitar = QtWidgets.QPushButton("×")
         quitar.setFixedWidth(24)
+        estilo.rol(quitar, "icono")
         quitar.setToolTip(t("ayuda_quitar_" + clave))
         quitar.clicked.connect(al_quitar)
         fila.addWidget(estado, 1)
@@ -421,7 +409,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def _botones_crecer(self):
         fila = QtWidgets.QHBoxLayout()
         self.boton_crecer = QtWidgets.QPushButton(t("crecer"))
-        self.boton_crecer.setObjectName("principal")
+        estilo.primario(self.boton_crecer)
         self.boton_crecer.setToolTip(t("ayuda_crecer"))
         self.boton_crecer.clicked.connect(self._crecer)
         self.boton_mas = QtWidgets.QPushButton(t("crecer_mas"))
@@ -464,7 +452,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def _pie(self):
         fila = QtWidgets.QHBoxLayout()
         self.boton_malla = QtWidgets.QPushButton(t("crear_malla"))
-        self.boton_malla.setObjectName("principal")
+        estilo.primario(self.boton_malla)
         self.boton_malla.setMinimumHeight(36)
         self.boton_malla.setToolTip(t("ayuda_crear_malla"))
         self.boton_malla.clicked.connect(self._crear_malla)
@@ -571,7 +559,7 @@ class Ventana(MayaQWidgetDockableMixin, QtWidgets.QWidget):
     def avisar(self, texto, aviso=True):
         """Enseña un mensaje bajo los botones (y en la línea de avisos de Maya)."""
         self.mensaje.setText(texto)
-        self.mensaje.setStyleSheet("color: {};".format(_COLOR_AVISO if aviso else _COLOR_BIEN))
+        estilo.rol(self.mensaje, "aviso" if aviso else "bien")
         if EN_MAYA and aviso:
             cmds.warning(texto)
 

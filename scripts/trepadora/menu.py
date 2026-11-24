@@ -25,8 +25,9 @@ def crear():
         return
     idioma_guardado()
     borrar()
-    principal = mel.eval("$tmp = $gMainWindow")
-    cmds.menu(MENU, label=t("menu_titulo"), parent=principal, tearOff=True)
+    from . import pack
+
+    pack.crear_menu(MENU, t("menu_titulo"), padre=mel.eval("$tmp = $gMainWindow"))
     cmds.menuItem(label=t("menu_abrir"), annotation=t("ayuda_menu_abrir"),
                   command=lambda *_: abrir())
     cmds.menuItem(divider=True, dividerLabel=t("menu_escenas"))
@@ -74,8 +75,9 @@ def cambiar_idioma(codigo):
 
 
 def borrar():
-    if cmds.menu(MENU, exists=True):
-        cmds.deleteUI(MENU)
+    from . import pack
+
+    pack.quitar_menu(MENU)
 
 
 def abrir():
