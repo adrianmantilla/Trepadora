@@ -22,7 +22,7 @@ import maya_nombres  # noqa: E402
 from superficies import Muro  # noqa: E402
 from trepadora.crecimiento import Crecimiento, Parametros  # noqa: E402
 
-_MODULOS_CON_MAYA = ("trepadora.prototipo", "trepadora.deshacer")
+_MODULOS_CON_MAYA = ("trepadora.prototipo", "trepadora.deshacer", "trepadora.openpbr", "trepadora.menu")
 
 
 def _crecida(semilla):
@@ -47,6 +47,8 @@ class PruebasDosPlantas(unittest.TestCase):
         self.addCleanup(parche.stop)
         for nombre in _MODULOS_CON_MAYA:
             del sys.modules[nombre]
+            if hasattr(trepadora, nombre.split(".")[1]):   # «from . import x» lo tomaría de aquí
+                delattr(trepadora, nombre.split(".")[1])
         self.prototipo = importlib.import_module("trepadora.prototipo")
         self.cmds = sys.modules["maya.cmds"]
 

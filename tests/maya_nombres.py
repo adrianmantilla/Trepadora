@@ -173,7 +173,9 @@ def instalar():
 
     def delete(nombres):
         for nombre in _lista(nombres):
-            e.borrar(e.buscar(nombre))
+            nodo = e.buscar(nombre)
+            e.borrar(nodo)
+            e.conexiones = [c for c in e.conexiones if nodo not in (c[0], c[2])]
 
     def shadingNode(tipo, name=None, **_):
         return e.crear(name or tipo + "1", tipo, dag=False).nombre
@@ -184,16 +186,36 @@ def instalar():
             for nombre in objetos:
                 e.buscar(nombre)
             return grupo.nombre
-        return e.crear(name or "set1", "shadingEngine", dag=False).nombre
+        grupo = e.crear(name or "set1", "shadingEngine", dag=False)
+        if e.arnold:
+            grupo.attrs["aiSurfaceShader"] = None
+        return grupo.nombre
 
     def connectAttr(origen, destino, force=False):
         o, d = e.buscar(origen), e.buscar(destino)
         e.conexiones.append((o, origen.split(".", 1)[1], d, destino.split(".", 1)[1]))
 
-    def listConnections(atributo, type=None, **_):
-        nodo, nombre = e.buscar(atributo), atributo.split(".", 1)[1]
+    def listConnections(atributo, type=None, source=None, destination=None, connections=False,
+                        plugs=False, **_):
+        nodo = e.buscar(atributo)
+        if "." not in atributo:   # todo el nodo: entradas o salidas, en pares
+            res = []
+            for o, a, d, b in e.conexiones:
+                if source and d is nodo:
+                    res += [d.nombre + "." + b, o.nombre + "." + a]
+                elif destination and o is nodo:
+                    res += [o.nombre + "." + a, d.nombre + "." + b]
+            return res or None
+        nombre = atributo.split(".", 1)[1]
+        if source and not destination:
+            return [o.nombre for o, a, d, b in e.conexiones
+                    if d is nodo and b == nombre] or None
         return [d.nombre for o, a, d, _b in e.conexiones
                 if o is nodo and a == nombre and (type is None or d.tipo == type)] or None
+
+    def allNodeTypes(**_):
+        return ["openPBRSurface", "standardSurface", "lambert"] + (
+            ["aiStandardSurface", "aiImage"] if e.arnold else [])
 
     def particle(position=(), name="particle1", **_):
         t = e.crear(name, "transform")
@@ -256,17 +278,18 @@ def instalar():
     def warning(texto):
         e.avisos.append(texto)
 
-    def undoInfo(query=False, stateWithoutFlush=None, **_):
+    def undoInfo(query=False, stateWithoutFlush=None, **opciones):
         if query:
             return e.deshacer
-        e.deshacer = stateWithoutFlush
+        if stateWithoutFlush is not None:
+            e.deshacer = stateWithoutFlush
 
     for funcion in (objExists, ls, nodeType, group, rename, parent, listRelatives, setAttr,
                     getAttr, addAttr, attributeQuery, select, delete, shadingNode, sets,
                     connectAttr, listConnections, particle, saveInitialState,
                     particleInstancer, duplicate, xform, exactWorldBoundingBox, pluginInfo,
                     colorManagementPrefs, warning, isConnected, polyColorSet, optionVar,
-                    undoInfo):
+                    undoInfo, allNodeTypes):
         setattr(cmds, funcion.__name__, funcion)
 
     om = types.ModuleType("maya.api.OpenMaya")

@@ -19,7 +19,7 @@ import math
 
 from maya import cmds
 
-from . import deshacer, geometria, texturas
+from . import deshacer, geometria, openpbr, texturas
 from .crecimiento import Crecimiento, Parametros
 from .hojas import ParametrosHojas, colocar_hojas
 from .i18n import t
@@ -497,8 +497,9 @@ def _espacio_raw(nodo):
             pass
 
 
-# Ajustes del aiStandardSurface de cada pieza. «base» a 1 (Arnold trae 0.8)
-# para que el color sea el de los vértices, como en el visor. Las hojas son
+# Ajustes del material de render de cada pieza (openPBRSurface; ver
+# openpbr.py), con los nombres de standardSurface. «base» a 1 para que el color
+# sea el de los vértices, como en el visor. Las hojas son
 # finas: con thinWalled, «subsurface» es la luz que las atraviesa (a contraluz
 # brillan), pero lo que pasa al otro lado se le quita a la cara iluminada; la
 # hiedra es gruesa y cerosa, deja pasar poca. La luz que atraviesa una hoja
@@ -525,7 +526,8 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
     """Material de Arnold para la pieza, si Arnold (MtoA) está cargado.
 
     El lambert del grupo de sombreado queda para el visor; Arnold usa en su
-    lugar un aiStandardSurface (conectado a aiSurfaceShader) que toma el color
+    lugar un openPBRSurface (aiStandardSurface en un Maya sin OpenPBR),
+    conectado a aiSurfaceShader, que toma el color
     de cada hoja de los colores de vértice. Sin esto, en el render todas las
     hojas saldrían del mismo verde. ``clave`` elige los ajustes de _ARNOLD
     (por defecto, los de ``nombre``). Con ``por_instancia``, el color de los
@@ -542,7 +544,8 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
         conjunto = (cmds.polyColorSet(forma, query=True, currentColorSet=True) or ["colorSet1"])[0]
         shader = nombre + "_ai"
         if not cmds.objExists(shader):
-            shader = cmds.shadingNode("aiStandardSurface", asShader=True, name=shader)
+            tipo = openpbr.TIPO if openpbr.disponible() else "aiStandardSurface"
+            shader = cmds.shadingNode(tipo, asShader=True, name=shader)
             dato = cmds.shadingNode("aiUserDataColor", asUtility=True, name=nombre + "_color_ai")
             cmds.setAttr(dato + ".attribute", conjunto, type="string")
             cmds.setAttr(dato + ".default", *_a_lineal(color, _con_gestion_de_color(), brillo),
@@ -553,16 +556,31 @@ def _material_arnold(transform, grupo, nombre, color, brillo=1.0, clave=None,
             if ajustes.get("subsurface"):
                 _color_traslucido(dato, shader, nombre)
             for atributo, valor in ajustes.items():
-                cmds.setAttr(shader + "." + atributo, valor)
+                openpbr.poner(shader, atributo, valor)
             if textura:
                 dato = _texturas_arnold(shader, dato, nombre, textura, ajustes)
-            cmds.connectAttr(dato + ".outColor", shader + ".baseColor", force=True)
+            openpbr.conectar(dato + ".outColor", shader, "baseColor")
         if cmds.attributeQuery("aiSurfaceShader", node=grupo, exists=True):
             _conectar(shader + ".outColor", grupo + ".aiSurfaceShader")
         return shader
     except RuntimeError as error:
         cmds.warning(t("sin_arnold", error=error))
         return None
+
+
+def convertir_a_openpbr():
+    """Pasa a openPBRSurface los materiales de render de las plantas ya hechas.
+
+    Para escenas de versiones anteriores, que usaban aiStandardSurface. Las
+    texturas, los colores de las hojas y el material del visor no cambian.
+    Devuelve la lista de materiales convertidos (vacía si no había o si este
+    Maya no tiene OpenPBR).
+    """
+    cmds.undoInfo(openChunk=True, chunkName="Trepadora: OpenPBR")
+    try:
+        return openpbr.convertir_escena(("trepadora_*_ai",))
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 def _imagen_ai(juego, mapa, resolucion, multiplicar=None):
@@ -601,14 +619,14 @@ def _texturas_arnold(shader, dato, nombre, textura, ajustes):
         if relieve:
             mapa = cmds.shadingNode("aiNormalMap", asUtility=True, name=nombre + "_relieve_ai")
             cmds.connectAttr(relieve + ".outColor", mapa + ".input", force=True)
-            cmds.connectAttr(mapa + ".outValue", shader + ".normalCamera", force=True)
+            openpbr.conectar(mapa + ".outValue", shader, "normalCamera")
         rugosidad = _imagen_ai(juego, "rugosidad", resolucion)
         if rugosidad:
-            cmds.connectAttr(rugosidad + ".outColorR", shader + ".specularRoughness", force=True)
+            openpbr.conectar(rugosidad + ".outColorR", shader, "specularRoughness")
         if ajustes.get("subsurface") and "traslucidez" in texturas.mapas_de(juego):
             luz = _imagen_ai(juego, "traslucidez", resolucion, multiplicar=ajustes["subsurface"])
             if luz:
-                cmds.connectAttr(luz + ".outColorR", shader + ".subsurface", force=True)
+                openpbr.conectar(luz + ".outColorR", shader, "subsurface")
     except RuntimeError as error:
         cmds.warning(t("sin_texturas", error=error))
     return dato
@@ -637,7 +655,7 @@ def _color_traslucido(dato, shader, nombre):
         claro = cmds.shadingNode("aiMultiply", asUtility=True, name=nombre + "_traslucido_ai")
         cmds.connectAttr(dato + ".outColor", claro + ".input1", force=True)
         cmds.setAttr(claro + ".input2", *_TRASLUCIDO, type="double3")
-        cmds.connectAttr(claro + ".outColor", shader + ".subsurfaceColor", force=True)
+        openpbr.conectar(claro + ".outColor", shader, "subsurfaceColor")
     except RuntimeError:
         # Sin aiMultiply, el mismo color de la hoja: atraviesa menos luz.
         cmds.connectAttr(dato + ".outColor", shader + ".subsurfaceColor", force=True)
