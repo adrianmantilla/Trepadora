@@ -1,17 +1,46 @@
 # Trepadora
 
-Plugin para generar plantas trepadoras en Autodesk Maya 2026 y 2027, pensado para estudiantes.
+**Hiedra y plantas trepadoras para Autodesk Maya, en unos clics.** Eliges las mallas por las que
+trepa (un muro, una columna, una ruina entera), dices dónde nace y Trepadora hace crecer la planta:
+tallos con grosor, raíces adhesivas, rabillos y miles de hojas, lista para renderizar con Arnold o
+para exportar a un motor de juego.
 
-> **Estado: v2.** Ventana acoplable con los pasos en orden, preajustes e instalador de un
-> solo gesto. Genera tallos con grosor, raíces adhesivas, rabillos y hojas (instancias de
-> unas pocas hojas modelo, o una sola malla) con materiales de Arnold y texturas de hoja y
-> de corteza en cuatro tamaños, de 512 a 4K. La planta esquiva las zonas prohibidas
-> (ventanas, puertas), puede seguir una curva guía y sus ramas se recortan con un clic.
-> Exporta a FBX (Unity, Unreal) y a Alembic, con sus texturas, y con hojas ligeras para
-> juegos. Interfaz en español y en inglés.
+Nació como herramienta para un aula de 3D, pero la puede usar cualquiera que trabaje con Maya.
 
-Funciona igual en Windows y en macOS, con el Python que trae Maya: no hay que instalar
-nada más (no usa NumPy).
+![Una ruina cubierta de hiedra hecha con Trepadora, renderizada con Arnold](docs/imagenes/ruina_arnold.jpg)
+
+*[English summary below](#english).*
+
+## Qué hace
+
+- **Crece sobre cualquier malla**: sube por las paredes, cuelga de los bordes y repta por el suelo.
+  Mismos ajustes y misma semilla dan siempre la misma planta.
+- **Ventana guiada en cuatro pasos** (superficie, origen, aspecto, crear malla), acoplable, con una
+  vista previa rápida en líneas antes de crear la geometría.
+- **Control artístico**: zonas prohibidas (ventanas, puertas), curva guía que la planta sigue y
+  recorte de ramas con un clic.
+- **Varios tipos de tallo y de hoja** (hiedra, corazón, alargada, redonda) o tu propia hoja
+  modelada. Cinco preajustes y los tuyos, que se guardan y se comparten como `.json`.
+- **Ligera en la escena**: las hojas son instancias de unas pocas hojas modelo.
+- **Lista para Arnold**: materiales con color por hoja, relieve, brillo y luz a contraluz, con
+  texturas incluidas en 512, 1K, 2K y 4K.
+- **Exporta** a FBX (Unity, Unreal) y Alembic, con sus texturas, y con hojas ligeras para juegos.
+- **Todo se deshace** con un solo Ctrl+Z, y la escena recuerda lo que hiciste.
+- Interfaz en **español e inglés**, preparada para traducirse a otros idiomas.
+
+![De cerca: hojas con textura y luz a contraluz en Arnold](docs/imagenes/hojas_cerca.jpg)
+
+## Requisitos
+
+| | |
+| --- | --- |
+| Maya | 2026 o 2027 |
+| Sistema | Windows o macOS |
+| Render | Arnold (MtoA) para los materiales completos; sin Arnold funciona igual, con el material del visor |
+| Dependencias | Ninguna: usa el Python que trae Maya (no necesita NumPy ni instalar paquetes) |
+
+Probado a fondo en Maya 2027 en macOS. Está pensado para que funcione igual en Windows y en Maya
+2026; si encuentras algún problema ahí, [cuéntalo](https://github.com/adrianmantilla/trepadora/issues).
 
 ## Instalar
 
@@ -27,17 +56,16 @@ Eso es todo. El instalador:
 - crea el estante **Trepadora** con un botón que abre la ventana;
 - abre la ventana.
 
-**Aviso de seguridad de Maya 2027.** Maya avisa cuando carga un plug-in desde una carpeta
-que no conoce: *Untrusted Plugin Loading - Security Warning*. Es el plug-in de Trepadora:
-pulsa **Allow**. Si marcas antes **Apply to all plugins in this location**, Maya no lo
-volverá a preguntar para esa carpeta. Si pulsas **Deny**, la ventana y el estante
-funcionan, pero no aparece el menú al abrir Maya y Ctrl+Z no quita de una vez la planta
-creada con **Crear malla**; para arreglarlo, arrastra otra vez `instalar.py` y pulsa
-**Allow**.
+**Aviso de seguridad de Maya.** Maya avisa cuando carga un plug-in desde una carpeta que no
+conoce: *Untrusted Plugin Loading - Security Warning*. Es el plug-in de Trepadora: pulsa
+**Allow**. Si marcas antes **Apply to all plugins in this location**, Maya no lo volverá a
+preguntar para esa carpeta. Si pulsas **Deny**, la ventana y el estante funcionan, pero no
+aparece el menú al abrir Maya y Ctrl+Z no quita de una vez la planta creada con **Crear malla**;
+para arreglarlo, arrastra otra vez `instalar.py` y pulsa **Allow**.
 
-No copia nada: si mueves la carpeta, vuelve a arrastrar `instalar.py`. Para actualizar a
-una versión nueva, sustituye la carpeta y arrastra otra vez `instalar.py` (no hace falta
-reiniciar Maya).
+**Actualizar:** sustituye la carpeta por la versión nueva y arrastra otra vez `instalar.py` (no
+hace falta reiniciar Maya). El instalador no copia nada: si mueves la carpeta, vuelve a
+arrastrar `instalar.py`.
 
 **Desinstalar:** en el Script Editor, pestaña Python, ejecuta (con tu ruta):
 
@@ -100,7 +128,7 @@ al dejar el ratón encima.
 
 **Preajustes.** El desplegable de arriba trae cinco: Hiedra de fachada, Enredadera colgante,
 Musgo trepador, Hoja de corazón y Ramas secas. Con el botón **…** puedes guardar los tuyos,
-importarlos y exportarlos como archivos `.json` (para repartirlos a la clase), borrar los
+importarlos y exportarlos como archivos `.json` (para compartirlos con otras personas o repartirlos en clase), borrar los
 tuyos y volver a los valores por defecto. Los tuyos se guardan en la carpeta de preferencias
 de Maya, en `trepadora/preajustes`.
 
@@ -127,7 +155,7 @@ Substance ni ningún otro programa). En el visor se ven los nervios con la tecla
 | Resolución | Para qué |
 |---|---|
 | 512 | juegos y escenas con muchas plantas |
-| 1K | clase (por defecto) |
+| 1K | trabajo diario y clase (por defecto) |
 | 2K | renders |
 | 4K | renders de cerca |
 
@@ -181,168 +209,68 @@ la ruina suman unos 100.000 vértices a los tallos.
 Language**, sin reiniciar Maya: si la ventana está abierta, se vuelve a abrir en el idioma
 elegido sin perder lo que tenías, y el idioma se recuerda para la próxima vez.
 
-## Uso desde el Script Editor (avanzado)
 
-Lo mismo se puede hacer sin la ventana. Con Trepadora instalada, en la pestaña **Python**:
+## Si algo falla
 
-```python
-import trepadora.prototipo as tp
-tp.escena_de_prueba()        # crea suelo, muro, caja y un localizador, y hace crecer
-tp.escena_ruina()            # una pequeña ruina: muro con ventana, columna y murete
-```
+- **No aparece el menú Trepadora al abrir Maya.** Seguramente se pulsó **Deny** en el aviso de
+  seguridad: arrastra otra vez `instalar.py` y pulsa **Allow**. Si moviste la carpeta, también
+  hay que volver a arrastrarlo.
+- **En el render todas las hojas salen del mismo verde.** Arnold no estaba cargado al crear la
+  malla. Carga MtoA en el Plug-in Manager y vuelve a pulsar **Crear malla**.
+- **No se ven los nervios de las hojas en el visor.** Pulsa **6** (modo con texturas).
+- **La escena viene de otro ordenador y faltan texturas.** Basta con tener Trepadora instalada:
+  el plug-in vuelve a apuntar las texturas a su carpeta al abrir la escena.
+- **Maya va lento.** Mira la carga en el pie de la ventana: baja la **Densidad de hojas** o el
+  **Tamaño**, deja las hojas como instancias y usa la resolución de texturas 512 o 1K.
 
-Para usar tu propia escena: selecciona una o varias mallas y, si quieres, uno o varios
-localizadores donde nace cada planta. Después:
+Para cualquier otro problema, abre una [incidencia](https://github.com/adrianmantilla/trepadora/issues)
+con tu versión de Maya, tu sistema y lo que sale en el Script Editor.
 
-```python
-tp.ejecutar(semilla=3)                   # tallos y hojas
-tp.ejecutar(semilla=3, modo="curvas")    # solo líneas, para probar ajustes rápido
-tp.ejecutar(semilla=3, forma_hoja="corazon", tipo_tallo="verde")
-tp.ejecutar(semilla=3, hoja_propia="miHoja")   # tu propia hoja modelada
-tp.ejecutar(semilla=3, instancias=False)       # todas las hojas en una malla
-```
+## Para quien quiera ir más allá
 
-Sin localizadores, la planta nace en la base del primer objeto seleccionado. Sin instalar,
-añade antes la carpeta `scripts` a `sys.path`.
+En [docs/REFERENCIA.md](docs/REFERENCIA.md) está el uso desde Python (todos los ajustes del
+crecimiento y de las hojas), la estructura del código, cómo rehacer las texturas y cómo traducir
+la interfaz a otro idioma. Las pruebas automáticas se ejecutan sin Maya:
+`python -m unittest discover tests`.
 
-### Hojas, tallos y tipos
+## Licencia y créditos
 
-| Opción | Por defecto | Qué hace |
-| --- | --- | --- |
-| `instancias` | True | Las hojas son instancias de unas pocas hojas modelo (unas 50): la escena pesa mucho menos y el visor va más suelto. Con `False`, todas las hojas van en una sola malla, por ejemplo para exportarla |
-| `forma_hoja` | `"hiedra"` | `"hiedra"` (con lóbulos, mezclada con acorazonada), `"corazon"`, `"alargada"` o `"redonda"` |
-| `tipo_tallo` | `"lenoso"` | `"lenoso"` (marrón, puntas verdes), `"nudoso"` (más grueso, con corteza arrugada), `"verde"` (fino y verde) o `"rojizo"` (como la parra virgen) |
-| `hoja_propia` | ninguna | Nombre de una malla de tu escena que se usa como hoja (siempre con instancias). Modélala con la base en el origen, la punta hacia +Y y la cara hacia +Z; el tamaño se ajusta solo y conserva su material |
+Creado por Adrián Mantilla.
 
-Con instancias, el visor enseña cada hoja con el tono de su hoja modelo: seis tonos, cada
-uno con su material de visor (`trepadora_hojas_tono1_mat` a `trepadora_hojas_tono6_mat`),
-porque el visor no pinta los colores de vértice de las instancias. En el render de Arnold
-cada hoja sale con su propio color, porque cada instancia lleva en `rgbPP` cuánto se aparta
-del tono de su modelo. Las hojas modelo quedan
-ocultas en el grupo `trepadora_hojas_modelos`, y las partículas que marcan dónde va cada
-hoja, en `trepadora_hojas_puntos` (también ocultas).
+El código se publica con la [licencia MIT](LICENSE): puedes usarlo, modificarlo y
+redistribuirlo, también en proyectos comerciales, siempre que conserves el aviso de copyright.
+La licencia MIT no cubre la textura de la corteza (ver abajo).
 
-### Ajustes del crecimiento
+**Texturas.** Las de las hojas se dibujan con un script propio
+(`herramientas/texturas/generar_texturas.py`). La de la corteza se generó con el material
+*Wood Bark* de Adobe Substance 3D Painter (`herramientas/painter/`), así que su uso puede estar
+sujeto a las condiciones de Adobe para los materiales de Substance. Si vas a redistribuir esas
+texturas fuera de tu propio trabajo, revisa esas condiciones o rehaz la corteza con
+`generar_texturas.py --con-corteza`, que crea una corteza procedural sin Substance.
 
-Se pasan por nombre, por ejemplo `tp.ejecutar(semilla=4, gravedad=1.0, prob_rama=0.08)`.
+Autodesk, Maya y Arnold son marcas de Autodesk, Inc.; Adobe y Substance son marcas de Adobe. Trepadora es un proyecto independiente, sin relación con esas empresas.
 
-| Ajuste | Por defecto | Qué hace |
-| --- | --- | --- |
-| `semilla` | 1 | Mismos ajustes y misma semilla dan siempre la misma planta |
-| `pasos` | 260 | Cuánto crece |
-| `adherencia` | 0.8 | Cuánto se pega a la superficie (0 a 1) |
-| `gravedad` | 0.5 | Cuánto cuelga cuando pierde el apoyo; por encima de 0.5 caen cortinas por la pared |
-| `luz` | 0.36 | Tendencia a subir por las paredes (hacia `direccion_luz`) |
-| `aleatoriedad` | 0.45 | Cuánto serpentea |
-| `cambio_deriva` | 0.25 | Bajo = curvas largas y tranquilas; alto = más nervioso |
-| `giro_max` | 16 | Grados que puede girar una rama en cada paso |
-| `evitar` | 0.9 | Cuánto se apartan las ramas de las zonas ya ocupadas |
-| `densidad_max` | 10 | Una rama deja de crecer si tiene más vecinas que esto |
-| `prob_rama` | 0.09 | Probabilidad por paso de que brote una rama nueva |
-| `generaciones_max` | 4 | Niveles de ramas hijas |
-| `longitud_max` | 220 | Puntos máximos de la rama principal |
-| `brotes_basales` | 3 | Tallos extra que salen de la base |
-| `rumbo` | 0.35 | Cuánto mantienen las ramas hijas la dirección con la que brotan (se abren en diagonal) |
-| `luz_variacion` | 0.35 | Cada rama busca la luz con una fuerza distinta (evita franjas paralelas) |
-| `buscar_hueco` | True | Las ramas nuevas brotan donde hay más hueco |
-| `buscar_paredes` | 1.0 | Si la planta nace en el suelo, va hacia la pared más cercana y trepa |
-| `prob_colgar` | 0.35 | Probabilidad de que caiga un tallo colgante desde un borde o un saliente |
-| `largo_colgante` | 45 | Largo máximo de los tallos colgantes, en pasos |
-| `ramillas` | 0 | Probabilidad por paso de una ramilla corta que rellena huecos (prueba 0.08) |
-| `largo_ramilla` | 12 | Largo máximo de cada ramilla, en pasos |
-| `limite_puntos` | 60000 | Tope de seguridad para no colgar Maya |
-| `grosor` | 1.0 | Multiplica el grosor de los tallos |
-| `paso` | automático | Largo de cada paso, en unidades de la escena |
+## English
 
-### Ajustes de las hojas
+**Trepadora** ("climber") grows ivy and other climbing plants over any mesh in Autodesk Maya
+2026 and 2027, on Windows and macOS. It builds thick stems, clinging rootlets, petioles and
+thousands of instanced leaves with Arnold materials and textures (512 to 4K), and exports to FBX
+(Unity, Unreal) and Alembic, with an optional lightweight leaf-card export for games. It needs
+nothing beyond the Python that ships with Maya.
 
-Se pasan como diccionario: `tp.ejecutar(semilla=2, hojas={"densidad": 0.6, "tamano": 1.3})`.
+**Install:** download the repository (**Code → Download ZIP**), unzip it somewhere permanent and
+drag `instalar.py` into the Maya viewport. If Maya shows *Untrusted Plugin Loading*, click
+**Allow**. A **Trepadora** menu and shelf appear.
 
-| Ajuste | Por defecto | Qué hace |
-| --- | --- | --- |
-| `densidad` | 0.82 | Probabilidad de hoja en cada punto de rama |
-| `tamano` | 1.0 | Tamaño relativo de las hojas |
-| `variacion` | 0.5 | Diferencia de tamaño entre hojas |
-| `puntas_jovenes` | 14 | Puntos desde la punta en los que las hojas son pequeñas |
-| `peciolo` | 0.28 | Largo del rabillo, relativo al tamaño de la hoja |
-| `despegue` | 0.35 | Cuánto se separan de la pared |
-| `caida` | 0.45 | Cuánto cuelga la punta de la hoja |
-| `degradado` | 0.7 | Cuánto menguan las hojas lejos de la raíz (0 = todas iguales) |
-| `tronco_visible` | 1.0 | Cuánto se aclaran las hojas sobre los tallos gruesos (0 = nada) |
-| `en_suelo` | 0.4 | Fracción de hojas en los tallos que reptan por el suelo |
-| `manchas` | 0.6 | Cuánto se agrupan las hojas en matas tupidas, oscuras y abultadas (rabillos largos, hojas a distintas distancias del muro), con zonas más ralas, planas y de verde más claro entre ellas (0 = reparto uniforme) |
-| `escala_manchas` | 9.0 | Tamaño de esas matas, en largos de hoja |
-| `bronce` | 0.015 | Cuántas hojas tiran a bronce, como la hiedra en invierno (con 0.015, alrededor de una de cada cien); salen sueltas, nunca dos juntas, entre las hojas viejas de la parte baja |
+**Switch the interface to English:** **Trepadora → Idioma / Language → English**. The language
+changes without restarting Maya and is remembered.
 
-Las distancias (paso, adherencia, separación) se calculan solas a partir del tamaño de los
-objetos seleccionados.
+**Workflow:** in the window, (1) pick the surface meshes and, optionally, forbidden zones (boxes
+over windows or doors); (2) click where each plant starts, or pick a guide curve; (3) choose stem
+type, leaf shape, size and density, press **Grow** to preview it as lines, and trim branches with
+a click; (4) press **Create mesh**. One Ctrl+Z undoes the whole plant. The **Export…** button
+writes FBX or Alembic with its textures.
 
-## Estructura
-
-```
-instalar.py           instalador: se arrastra al visor de Maya
-plug-ins/
-  trepadora_plugin.py plug-in de Maya: crea el menú Trepadora y el paso de Ctrl+Z de Crear malla
-icons/trepadora.png   icono del estante
-scripts/trepadora/
-  ajustes.py          los ajustes de la ventana, sus rangos y los preajustes (no depende de Maya)
-  preajustes/         los preajustes incluidos (.json)
-  sesion.py           lo que hace la ventana: superficie, orígenes, crecer, crear malla
-  ui/ventana.py       la ventana (PySide6, acoplable)
-  ui/herramienta.py   herramienta de clic en el visor para colocar orígenes
-  menu.py             menú Trepadora
-  deshacer.py         Ctrl+Z quita de una vez la planta creada (sus mallas se hacen con la API)
-  crecimiento.py      algoritmo de crecimiento y grosor (no depende de Maya)
-  hojas.py            colocación de hojas
-  geometria.py        mallas de tallos, hojas y rabillos en Python puro; tipos de tallo y hoja
-  instancias.py       hojas modelo y colocación de cada hoja para el instanciador
-  vectores.py         operaciones con vectores
-  superficie_maya.py  consultas de punto más cercano sobre mallas de Maya; zonas y curvas guía
-  zonas.py            zonas prohibidas: cajas orientadas que la planta rodea (no depende de Maya)
-  guias.py            curvas guía: el tirón que siguen las ramas (no depende de Maya)
-  escenas.py          escenas de prueba (sencilla y ruina) y sus ajustes
-  prototipo.py        crea en Maya la vista previa, la planta y sus materiales
-  texturas.py         texturas de hojas y tallos: resoluciones, rutas y cambio en la escena
-  exportar.py         exportar a FBX y Alembic: hornea las hojas en una malla (o en tarjetas
-                      ligeras) y copia las texturas
-  i18n/               textos por idioma (es.json, en.json); la interfaz se puede traducir
-texturas/             texturas JPEG en 512/, 1k/, 2k/ y 4k/: <juego>_<mapa>.jpg
-herramientas/
-  texturas/generar_texturas.py  dibuja las texturas de las hojas (NumPy y Pillow, sin Maya)
-  painter/            scripts para Substance 3D Painter: la corteza (Wood Bark) y el puente
-  prueba_ventana.py   prueba de la ventana dentro de Maya, botón a botón, con capturas
-  ensayo_sin_maya/    ensayo de la ventana con un Maya simulado (necesita PySide6)
-  prueba_instancias.py  prueba de las hojas como instancias (mayapy)
-  capturas_maya.py    genera las capturas de comparación en Maya
-  render_arnold.py    render de prueba de la ruina con Arnold, con cielo y sol (mayapy)
-  diagnostico.py      cifras del crecimiento de la ruina, iguales dentro y fuera de Maya
-tests/                pruebas sin Maya, con una escena simulada
-```
-
-Pruebas automáticas (fuera de Maya, con Python 3): `python -m unittest discover tests`.
-Las de la ventana necesitan PySide6 (`pip install PySide6`); si no está, se saltan.
-
-## Rehacer las texturas
-
-No hace falta para usar Trepadora: las texturas ya vienen hechas. Cada forma de hoja tiene
-el juego `hoja_<forma>` (detalle, normal, rugosidad y traslucidez) y los tallos el juego
-`corteza` (detalle, normal y rugosidad). El *detalle* es un gris que vale 0,5 de media: el
-material lo multiplica por el color de cada hoja, así que las hojas conservan sus tonos.
-Los relieves son mapas de normales de tipo OpenGL.
-
-- **Hojas:** `python herramientas/texturas/generar_texturas.py` las dibuja en el espacio UV
-  de cada forma de hoja y las guarda en `texturas/` a los cuatro tamaños (necesita NumPy y
-  Pillow). Con `--solo 512,1k` hace solo esos tamaños. No toca la corteza salvo que se
-  añada `--con-corteza`, que la sustituye por una corteza procedural para quien no tenga
-  Painter.
-- **Corteza:** sale de Substance 3D Painter con el material *Wood Bark*, mediante
-  `herramientas/painter/corteza_painter.py`, que se ejecuta dentro de Painter con el
-  complemento `herramientas/painter/trepadora_puente.py`.
-
-## Traducir la interfaz
-
-Todos los textos están en `scripts/trepadora/i18n/es.json` (y su traducción al inglés en
-`en.json`). Para otro idioma, copia el archivo con el código del idioma (por ejemplo
-`fr.json`), traduce los valores sin tocar las claves ni lo que va entre llaves. El idioma nuevo aparece solo en **Trepadora → Idioma /
-Language** (con su código; para que salga su nombre, añádelo a `NOMBRES_IDIOMA` en
-`scripts/trepadora/menu.py`). Lo que falte por traducir sale en español.
+Code under the [MIT license](LICENSE) (the bark texture is not covered: see *Licencia y créditos*).
+This README and the reference are in Spanish; the interface is fully translated. Issues in
+English are welcome.
