@@ -7,7 +7,7 @@ para exportar a un motor de juego.
 
 Nació como herramienta para un aula de 3D, pero la puede usar cualquiera que trabaje con Maya.
 
-![Una ruina cubierta de hiedra hecha con Trepadora, renderizada con Arnold](docs/imagenes/ruina_arnold.jpg)
+![Trepadora creciendo sobre una ruina en el visor de Maya 2027: de unas pocas ramas a unas 8.000 hojas](docs/imagenes/crecimiento.gif)
 
 *[English summary below](#english).*
 
@@ -28,7 +28,9 @@ Nació como herramienta para un aula de 3D, pero la puede usar cualquiera que tr
 - **Todo se deshace** con un solo Ctrl+Z, y la escena recuerda lo que hiciste.
 - Interfaz en **español e inglés**, preparada para traducirse a otros idiomas.
 
-![De cerca: hojas con textura y luz a contraluz en Arnold](docs/imagenes/hojas_cerca.jpg)
+![La misma ruina renderizada con Arnold](docs/imagenes/hero.jpg)
+
+![De cerca y a contraluz: la luz atraviesa las hojas y enseña los nervios](docs/imagenes/contraluz.jpg)
 
 ## Requisitos
 
@@ -78,6 +80,8 @@ Quita el módulo, el plug-in y el estante. No borra la carpeta ni tus preajustes
 
 ## Usar la ventana
 
+<img src="docs/imagenes/ventana.png" alt="La ventana de Trepadora" width="300" align="right">
+
 Abre la ventana con el botón del estante o con **Trepadora → Abrir Trepadora…**. Se puede
 acoplar a un lado de Maya y recuerda dónde la dejaste. Los pasos se activan en orden:
 
@@ -111,6 +115,25 @@ acoplar a un lado de Maya y recuerda dónde la dejaste. Los pasos se activan en 
    planta seleccionada. Todo se deshace con un solo **Ctrl+Z**; **Esc** detiene el
    crecimiento y se conserva lo crecido.
 
+<br clear="right">
+
+![Los cuatro pasos en Maya: superficie, origen, Crecer (líneas), Crecer más y Crear malla](docs/imagenes/flujo.gif)
+
+### Zonas prohibidas, curva guía y recortar ramas
+
+**Zonas prohibidas.** Una caja delante de la ventana basta para que la hiedra la rodee. Después la
+puedes ocultar.
+
+![Zona prohibida: antes, la caja, la planta rodeándola y la ventana libre](docs/imagenes/zonas.gif)
+
+**Curva guía.** La planta nace al principio de la curva y la sigue (aquí con **Seguir la guía** al máximo, en los ajustes avanzados).
+
+![Curva guía: la curva, la vista previa y la malla](docs/imagenes/guia.gif)
+
+**Recortar ramas.** Un clic sobre la vista previa corta la rama y todo lo que brota de ella.
+
+![Recortar ramas: el corte en la vista previa y la malla antes y después](docs/imagenes/recortar.gif)
+
 El pie de la ventana dice cuántas hojas saldrán y si la carga es baja, media o alta. Con
 carga alta, la ventana pregunta antes de crear la malla.
 
@@ -131,6 +154,8 @@ Musgo trepador, Hoja de corazón y Ramas secas. Con el botón **…** puedes gua
 importarlos y exportarlos como archivos `.json` (para compartirlos con otras personas o repartirlos en clase), borrar los
 tuyos y volver a los valores por defecto. Los tuyos se guardan en la carpeta de preferencias
 de Maya, en `trepadora/preajustes`.
+
+![Los cinco preajustes sobre el mismo muro: hiedra de fachada, enredadera colgante, musgo trepador, hoja de corazón y ramas secas](docs/imagenes/preajustes.jpg)
 
 **La escena recuerda.** La superficie, las zonas prohibidas, los orígenes, la curva guía, la
 hoja propia y los ajustes se guardan
