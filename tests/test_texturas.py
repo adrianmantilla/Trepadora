@@ -23,7 +23,7 @@ from superficies import Muro  # noqa: E402
 from trepadora import geometria, texturas  # noqa: E402
 from trepadora.crecimiento import Crecimiento, Parametros  # noqa: E402
 
-_MODULOS_CON_MAYA = ("trepadora.prototipo", "trepadora.deshacer")
+_MODULOS_CON_MAYA = ("trepadora.prototipo", "trepadora.deshacer", "trepadora.openpbr", "trepadora.menu")
 
 
 def _carpeta_falsa(resoluciones, juegos=None):
@@ -91,6 +91,8 @@ class PruebasMateriales(unittest.TestCase):
         self.addCleanup(parche.stop)
         for nombre in _MODULOS_CON_MAYA:
             del sys.modules[nombre]
+            if hasattr(trepadora, nombre.split(".")[1]):   # «from . import x» lo tomaría de aquí
+                delattr(trepadora, nombre.split(".")[1])
         self.prototipo = importlib.import_module("trepadora.prototipo")
         self.cmds = sys.modules["maya.cmds"]
 
@@ -121,7 +123,9 @@ class PruebasMateriales(unittest.TestCase):
         self.assertEqual(juegos, {"hoja_corazon", "corteza"})
         hojas = "trepadora_hoja_corazon_inst_ai"
         self.assertEqual(self._entra(hojas, "baseColor"), "trepadora_hoja_corazon_inst_detalle_ai")
-        self.assertEqual(self._entra(hojas, "subsurface"), "trepadora_tex_hoja_corazon_traslucidez_ai")
+        self.assertEqual(self.cmds.nodeType(hojas), "openPBRSurface")
+        self.assertEqual(self._entra(hojas, "subsurfaceWeight"),
+                         "trepadora_tex_hoja_corazon_traslucidez_ai")
         self.assertEqual(self._entra(hojas, "normalCamera"), "trepadora_hoja_corazon_inst_relieve_ai")
         self.assertEqual(self._entra("trepadora_tallos_ai", "specularRoughness"),
                          "trepadora_tex_corteza_rugosidad_ai")
@@ -189,6 +193,36 @@ class PruebasMateriales(unittest.TestCase):
         self.assertIsNone(exportar.instanciador_de(segunda))
         self.assertEqual(exportar.planta_de(segunda + "|trepadora_tallos"), segunda)
         self.assertEqual(sorted(exportar.plantas_en_escena()), sorted([primera, segunda]))
+
+    def test_convertir_escena_vieja_a_openpbr(self):
+        """Una planta con aiStandardSurface (como las de antes) pasa a OpenPBR sin perder nada."""
+        sin_openpbr = mock.patch.object(self.cmds, "allNodeTypes",
+                                        lambda **_: ["aiStandardSurface", "aiImage", "lambert"])
+        with sin_openpbr:
+            self._planta(1, forma_hoja="corazon", resolucion_texturas="1k")
+        hojas = "trepadora_hoja_corazon_inst_ai"
+        self.assertEqual(self.cmds.nodeType(hojas), "aiStandardSurface")
+        self.assertEqual(self.cmds.getAttr(hojas + ".specular"), 0.5)
+        grupos = sorted(d.nombre for o, a, d, b in self.escena.conexiones
+                        if o.nombre == hojas and b == "aiSurfaceShader")
+        self.assertTrue(grupos)
+
+        from trepadora import menu
+        hechos = menu.convertir_a_openpbr()
+        self.assertIn(hojas, hechos)
+        self.assertIn("trepadora_tallos_ai", hechos)
+        self.assertEqual(self.cmds.nodeType(hojas), "openPBRSurface")
+        self.assertEqual(self.cmds.getAttr(hojas + ".specularWeight"), 0.5)
+        self.assertEqual(self.cmds.getAttr(hojas + ".geometryThinWalled"), 1)
+        self.assertEqual(self._entra(hojas, "baseColor"), "trepadora_hoja_corazon_inst_detalle_ai")
+        self.assertEqual(self._entra(hojas, "subsurfaceWeight"),
+                         "trepadora_tex_hoja_corazon_traslucidez_ai")
+        self.assertEqual(self._entra(hojas, "normalCamera"), "trepadora_hoja_corazon_inst_relieve_ai")
+        self.assertEqual(sorted(d.nombre for o, a, d, b in self.escena.conexiones
+                                if o.nombre == hojas and b == "aiSurfaceShader"), grupos)
+        self.assertFalse(self.cmds.ls(type="aiStandardSurface"))
+        # Una segunda vez no hay nada que convertir.
+        self.assertEqual(menu.convertir_a_openpbr(), [])
 
     def test_sin_texturas_la_planta_sale_igual(self):
         shutil.rmtree(self.carpeta)

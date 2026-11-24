@@ -25,8 +25,9 @@ def crear():
         return
     idioma_guardado()
     borrar()
-    principal = mel.eval("$tmp = $gMainWindow")
-    cmds.menu(MENU, label=t("menu_titulo"), parent=principal, tearOff=True)
+    from . import pack
+
+    pack.crear_menu(MENU, t("menu_titulo"), padre=mel.eval("$tmp = $gMainWindow"))
     cmds.menuItem(label=t("menu_abrir"), annotation=t("ayuda_menu_abrir"),
                   command=lambda *_: abrir())
     cmds.menuItem(divider=True, dividerLabel=t("menu_escenas"))
@@ -39,6 +40,8 @@ def crear():
                   command=lambda *_: exportar_seleccion())
     cmds.menuItem(label=t("menu_exportar_ligeras"), annotation=t("ayuda_menu_exportar_ligeras"),
                   command=lambda *_: exportar_seleccion(ligeras=True))
+    cmds.menuItem(label=t("menu_openpbr"), annotation=t("ayuda_menu_openpbr"),
+                  command=lambda *_: convertir_a_openpbr())
     cmds.menuItem(divider=True)
     cmds.menuItem(label=t("menu_idioma"), subMenu=True)
     cmds.radioMenuItemCollection()
@@ -74,8 +77,9 @@ def cambiar_idioma(codigo):
 
 
 def borrar():
-    if cmds.menu(MENU, exists=True):
-        cmds.deleteUI(MENU)
+    from . import pack
+
+    pack.quitar_menu(MENU)
 
 
 def abrir():
@@ -141,6 +145,18 @@ def exportar_seleccion(ligeras=False):
     if informe["sin_color"]:
         cmds.warning(t("exportado_sin_color", juegos=", ".join(informe["sin_color"])))
     return informe
+
+
+def convertir_a_openpbr():
+    """Convierte a OpenPBR los materiales de las plantas de escenas viejas y dice cuántos."""
+    from . import openpbr, prototipo
+
+    if not openpbr.disponible():
+        cmds.warning(t("openpbr_no_disponible"))
+        return []
+    hechos = prototipo.convertir_a_openpbr()
+    print(t("openpbr_convertidos", n=len(hechos)))
+    return hechos
 
 
 def acerca_de():

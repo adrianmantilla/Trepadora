@@ -242,5 +242,9 @@
   "texturas_sin_cambios": "Textures at {resolucion}. New plants will use them.",
   "texturas_faltan": "The {resolucion} textures are missing from the Trepadora folder: the {usada} ones are used.",
   "texturas_reparadas": "Trepadora: {n} textures in the scene pointed to another folder (another computer); they now use the ones from this installation.",
-  "sin_texturas": "Trepadora: could not set the textures ({error}). The plant keeps its colors, without textures."
+  "sin_texturas": "Trepadora: could not set the textures ({error}). The plant keeps its colors, without textures.",
+  "menu_openpbr": "Convert materials to OpenPBR",
+  "ayuda_menu_openpbr": "For scenes made with earlier versions: replaces the plants' render material (aiStandardSurface) with openPBRSurface. Textures and colours stay the same.",
+  "openpbr_convertidos": "Trepadora: {n} materials converted to OpenPBR.",
+  "openpbr_no_disponible": "This Maya has no openPBRSurface (Maya 2025.3 or later is needed)."
 }

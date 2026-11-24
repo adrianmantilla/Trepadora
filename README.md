@@ -172,6 +172,10 @@ brillo y la luz que deja pasar la hoja, que a contraluz brilla y enseña los ner
 está cargado, la planta solo lleva el material del visor y en el render todas las hojas
 salen del mismo verde.
 
+Ese material es un **openPBRSurface** (OpenPBR, el mismo que usa Materials). Las escenas
+hechas con versiones anteriores usaban aiStandardSurface: **Trepadora → Convertir materiales a
+OpenPBR** los cambia sin tocar texturas ni colores.
+
 **Texturas.** Las hojas y los tallos llevan texturas que vienen con Trepadora (no hace falta
 Substance ni ningún otro programa). En el visor se ven los nervios con la tecla **6**
 (texturas); en el render, siempre. Cada textura está en cuatro tamaños y el ajuste
